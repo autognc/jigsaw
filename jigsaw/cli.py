@@ -44,8 +44,21 @@ if user_confirms(
     while True:
         subset = tags_df
         this_group_filters = []
+        len_subsets = [len(subset)]
         # inner loop to handle filtering for ONE set
         while True:
+
+            # if filters have been applied, display them to the user
+            # to help guide their next choice
+            if len(this_group_filters) > 0:
+                filters_applied = [
+                    "   > " + (" " + f["type"] + " ").join(f["tags"]) +
+                    " ({} -> {})".format(len_subsets[i], len_subsets[i + 1])
+                    for i, f in enumerate(this_group_filters)
+                ]
+                print(Fore.MAGENTA + "ℹ Filters already applied:\n{}".format(
+                    "\n".join(filters_applied)))
+
             selected_tags = user_selection(
                 message=
                 "Please select a set of tags with which to apply a filter:",
@@ -71,8 +84,9 @@ if user_confirms(
                 })
             print(
                 Fore.GREEN +
-                "There are {} images that meet the filter criteria selected.".
+                "ℹ There are {} images that meet the filter criteria selected.".
                 format(len(subset)))
+            len_subsets.append(len(subset))
 
             if not user_confirms(
                     message="Would you like to continue filtering this set?",
