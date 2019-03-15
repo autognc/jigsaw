@@ -48,7 +48,7 @@ def delete_dir(path):
         path (Path object): target directory
     """
     if os.path.isdir(path):
-        print("Deleting contents of", path,
+        print('\n', "Deleting contents of", path,
               "you've got five seconds to cancel this.")
         time.sleep(5)
 
@@ -65,7 +65,7 @@ def delete_dir(path):
                     "Directory deletion failed. Maybe you have a file explorer/terminal open in this dir?"
                 )
 
-        print("Done deleting contents of", path)
+        print('\n', "Done deleting contents of", path)
 
 
 def split_data(obj_list, test_percent=0.2):

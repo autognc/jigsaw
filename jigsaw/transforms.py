@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from queue import Queue
 from threading import Thread
 import pandas as pd
@@ -16,9 +17,10 @@ def load_labels(skip_background=True):
         list: a sorted list of label names (unique) across all images
     """
     label_set = set()
-    cwd = os.getcwd()
-    data_dir = os.path.join(cwd, "data")
-    labels_dir = os.path.join(data_dir, "labels")
+    cwd = Path.cwd()
+    data_dir = cwd / 'data'
+    labels_dir = data_dir / 'labels'
+
     os.chdir(labels_dir)
     for file in os.scandir():
         contents = pd.read_csv(file.name)
@@ -31,6 +33,7 @@ def load_labels(skip_background=True):
         except KeyError:
             pass
     os.chdir(cwd)
+
     return sorted(list(label_set))
 
 
