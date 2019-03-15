@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import print_function, unicode_literals
 
+import random
+import numpy as np
+random.seed(0)
+np.random.seed(0)
+
 from pathlib import Path
 
 from colorama import init, Fore
