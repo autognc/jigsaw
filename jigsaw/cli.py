@@ -219,6 +219,12 @@ for transform in transform_list:
 dataset_name = user_input(
     message="What would you like to name this dataset?",
     validator=FilenameValidator)
+
+k_folds_specified = user_input(
+    message="How many folds would you like the dataset to have?",
+    validator=IntegerValidator,
+    default="5")
+
 comments = user_input("Add any notes or comments about this dataset here:")
 user = user_input("Please enter your first and last name:")
 
@@ -230,12 +236,18 @@ if training_type == "Bounding Box":
         image_ids=results.index.tolist())
     bbox_labeled_images = list(bbox_labeled_images.values())
 
-    write_dataset(bbox_labeled_images, custom_dataset_name=dataset_name)
+    write_dataset(
+        bbox_labeled_images,
+        custom_dataset_name=dataset_name,
+        num_folds=k_folds_specified)
 
 elif training_type == "Semantic Segmentation":
     labeled_image_masks = load_LabeledImageMasks(
         image_ids=results.index.tolist())
-    write_dataset(labeled_image_masks, custom_dataset_name=dataset_name)
+    write_dataset(
+        labeled_image_masks,
+        custom_dataset_name=dataset_name,
+        num_folds=k_folds_specified)
 
 # write out metadata
 write_metadata(
