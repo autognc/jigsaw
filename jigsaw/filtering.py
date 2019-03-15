@@ -3,6 +3,7 @@ import os
 
 import pandas as pd
 
+from pathlib import Path
 from io_utils import download_json_metadata_from_s3
 
 
@@ -18,9 +19,10 @@ def load_metadata():
     """
     tags_df = pd.DataFrame()
     download_json_metadata_from_s3()
-    cwd = os.getcwd()
-    data_dir = os.path.join(cwd, "data")
-    json_dir = os.path.join(data_dir, "json")
+    cwd = Path.cwd()
+    data_dir = cwd / 'data'
+    json_dir = data_dir / 'json'
+
     os.chdir(json_dir)
     for dir_entry in os.scandir():
         if not dir_entry.name.endswith("meta.json"):
@@ -34,6 +36,7 @@ def load_metadata():
         tags_df = pd.concat((tags_df, temp), sort=False)
     tags_df = tags_df.fillna(False)
     os.chdir(cwd)
+
     return tags_df
 
 

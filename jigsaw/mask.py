@@ -1,4 +1,3 @@
-import os
 import numpy as np
 import pandas as pd
 import cv2
@@ -74,14 +73,15 @@ class LabeledImageMask:
             LabeledImageMask: the object representative of this semantically-
                 labeled image
         """
-        cwd = os.getcwd()
-        data_dir = os.path.join(cwd, "data")
-        masks_dir = os.path.join(data_dir, "masks")
-        labels_dir = os.path.join(data_dir, "labels")
-        images_dir = os.path.join(data_dir, "images")
-        mask_filepath = os.path.join(masks_dir, image_id + "_mask.png")
-        labels_filepath = os.path.join(labels_dir, image_id + "_labels.csv")
-        image_filepath = os.path.join(images_dir, image_id + ".jpg")
+        cwd = Path.cwd()
+        data_dir = cwd / 'data'
+        masks_dir = data_dir / 'masks'
+        labels_dir = data_dir / 'labels'
+        images_dir = data_dir / 'images'
+        mask_filepath = masks_dir / str(image_id + "_mask.png")
+        mask_filepath = str(mask_filepath.absolute()) #cv2.imread doesn't like Path objects.
+        labels_filepath = labels_dir / str(image_id + "_labels.csv")
+        image_filepath = images_dir / str(image_id + ".jpg")
 
         labels_df = pd.read_csv(labels_filepath, index_col="label")
         image_mask = cv2.imread(mask_filepath)
@@ -167,11 +167,10 @@ class LabeledImageMask:
         """Saves label changes to corresponding self LabeledImageMask
 
         """
-        cwd = os.getcwd()
-        data_dir = os.path.join(cwd, "data")
-        labels_dir = os.path.join(data_dir, "labels")
-        labels_filepath = os.path.join(labels_dir,
-                                       self.image_id + "_labels.csv")
+        cwd = Path.cwd()
+        data_dir = cwd / 'data'
+        labels_dir = data_dir / 'labels'
+        labels_filepath = labels_dir / str(self.image_id + "_labels.csv")
 
         lines = ["label,R,G,B"]
         for label, color in self.label_masks.items():
@@ -187,10 +186,10 @@ class LabeledImageMask:
         Args:
             changed_mask (cv2 image representation): modified mask to write out
         """
-        cwd = os.getcwd()
-        data_dir = os.path.join(cwd, "data")
-        masks_dir = os.path.join(data_dir, "masks")
-        mask_filepath = os.path.join(masks_dir, self.image_id + "_mask.png")
+        cwd = Path.cwd()
+        data_dir = cwd / 'data'
+        masks_dir = data_dir / 'masks'
+        mask_filepath = masks_dir / str(self.image_id + "_mask.png")
 
         cv2.imwrite(mask_filepath, changed_mask)
             

@@ -2,6 +2,7 @@ import os
 import requests
 import shutil
 
+from pathlib import Path
 from queue import Queue
 from threading import Thread
 from PIL import Image
@@ -67,9 +68,9 @@ def download_json_metadata_from_s3(prefix="", num_threads=20):
             queue.task_done()
 
     # create a directory to store downloaded metadata
-    cwd = os.getcwd()
-    data_dir = os.path.join(cwd, "data")
-    json_dir = os.path.join(data_dir, "json")
+    cwd = Path.cwd()
+    data_dir = cwd / 'data'
+    json_dir = data_dir / 'json'
     try:
         os.makedirs(json_dir)
     except FileExistsError:
@@ -131,9 +132,10 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
             queue.task_done()
 
     # create a directory to store downloaded metadata
-    cwd = os.getcwd()
-    data_dir = os.path.join(cwd, "data")
-    masks_dir = os.path.join(data_dir, "masks")
+
+    cwd = Path.cwd()
+    data_dir = cwd / 'data'
+    masks_dir = data_dir / 'masks'
     try:
         os.mkdir(masks_dir)
     except FileExistsError:
@@ -169,7 +171,7 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
         worker.join()
 
     # create a directory to store downloaded metadata
-    labels_dir = os.path.join(data_dir, "labels")
+    labels_dir = data_dir / 'labels'
     try:
         os.mkdir(labels_dir)
     except FileExistsError:
@@ -205,7 +207,7 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
         worker.join()
 
     # create a directory to store downloaded metadata
-    images_dir = os.path.join(data_dir, "images")
+    images_dir = data_dir / 'images'
     try:
         os.mkdir(images_dir)
     except FileExistsError:

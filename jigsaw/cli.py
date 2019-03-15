@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import print_function, unicode_literals
 
-import os
+from pathlib import Path
 
 from colorama import init, Fore
 from halo import Halo
@@ -262,7 +262,7 @@ write_metadata(
 write_label_map(name=dataset_name)
 spinner.succeed(text=spinner.text + "Complete.")
 
-spinner.text = "Uploading dataset to S3..."
-spinner.start()
-upload_dataset(directory=os.path.join(os.getcwd(), "dataset/" + dataset_name))
-spinner.succeed(text=spinner.text + "Complete.")
+#spinner.text = "Uploading dataset to S3..."
+#spinner.start()
+#upload_dataset(directory=Path.cwd() / 'dataset' / dataset_name)
+#spinner.succeed(text=spinner.text + "Complete.")
