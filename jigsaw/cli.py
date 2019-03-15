@@ -262,7 +262,7 @@ write_metadata(
 write_label_map(name=dataset_name)
 spinner.succeed(text=spinner.text + "Complete.")
 
-#spinner.text = "Uploading dataset to S3..."
-#spinner.start()
-#upload_dataset(directory=Path.cwd() / 'dataset' / dataset_name)
-#spinner.succeed(text=spinner.text + "Complete.")
+spinner.text = "Uploading dataset to S3..."
+spinner.start()
+upload_dataset(directory=Path.cwd() / 'dataset' / dataset_name)
+spinner.succeed(text=spinner.text + "Complete.")

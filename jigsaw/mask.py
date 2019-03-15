@@ -79,7 +79,7 @@ class LabeledImageMask:
         labels_dir = data_dir / 'labels'
         images_dir = data_dir / 'images'
         mask_filepath = masks_dir / str(image_id + "_mask.png")
-        mask_filepath = str(mask_filepath.absolute()) #cv2.imread doesn't like Path objects.
+        mask_filepath = str(mask_filepath.absolute()) # cv2.imread doesn't like Path objects.
         labels_filepath = labels_dir / str(image_id + "_labels.csv")
         image_filepath = images_dir / str(image_id + ".jpg")
 
@@ -191,7 +191,7 @@ class LabeledImageMask:
         masks_dir = data_dir / 'masks'
         mask_filepath = masks_dir / str(self.image_id + "_mask.png")
 
-        cv2.imwrite(mask_filepath, changed_mask)
+        cv2.imwrite(str(mask_filepath.absolute()), changed_mask)
             
     def convert_to_tf_example(self):
         """Converts LabeledImageMask object to tf_example
