@@ -8,8 +8,6 @@ from object_detection.utils import dataset_util
 import PIL
 import io
 
-np.random.seed(0)
-
 
 class LabeledImageMask:
     """Stores pixel-wise-labeled image data and provides related operations

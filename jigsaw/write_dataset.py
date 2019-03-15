@@ -28,7 +28,7 @@ import os, shutil, time, json
 import numpy as np
 
 from datetime import datetime
-from random import shuffle, seed
+from random import shuffle
 from pathlib import Path
 
 import contextlib2
@@ -37,8 +37,6 @@ from sklearn.model_selection import KFold
 
 from mask import LabeledImageMask
 from bounding_box import BBoxLabeledImage
-
-seed(0)
 
 
 def delete_dir(path):
