@@ -9,6 +9,9 @@ from object_detection.utils import dataset_util
 import PIL
 import io
 
+np.random.seed(0)
+
+
 class LabeledImageMask:
     """Stores pixel-wise-labeled image data and provides related operations
 
@@ -161,6 +164,9 @@ class LabeledImageMask:
         self.save_label_changes()
 
     def save_label_changes(self):
+        """Saves label changes to corresponding self LabeledImageMask
+
+        """
         cwd = os.getcwd()
         data_dir = os.path.join(cwd, "data")
         labels_dir = os.path.join(data_dir, "labels")
@@ -176,6 +182,11 @@ class LabeledImageMask:
             labels_csv.write(to_write)
 
     def save_mask_changes(self, changed_mask):
+        """Overwrites existing mask for corresponding LabeledImageMask with changed_mask
+
+        Args:
+            changed_mask (cv2 image representation): modified mask to write out
+        """
         cwd = os.getcwd()
         data_dir = os.path.join(cwd, "data")
         masks_dir = os.path.join(data_dir, "masks")
@@ -184,6 +195,11 @@ class LabeledImageMask:
         cv2.imwrite(mask_filepath, changed_mask)
             
     def convert_to_tf_example(self):
+        """Converts LabeledImageMask object to tf_example
+        
+        Returns:
+            tf_example (tf.train.Example): TensorFlow specified training object.
+        """
         path_to_image = Path(self.image_path)
 
         with tf.gfile.GFile(str(path_to_image.absolute()), 'rb') as fid:

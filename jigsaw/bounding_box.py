@@ -59,6 +59,11 @@ class BBoxLabeledImage:
                                 labeled_image_mask.xdim, labeled_image_mask.ydim)
 
     def convert_to_tf_example(self):
+        """Converts BBoxLabeledImage object to tf_example
+        
+        Returns:
+            tf_example (tf.train.Example): TensorFlow specified training object.
+        """
         path_to_image = Path(self.image_path)
 
         with tf.gfile.GFile(str(path_to_image.absolute()), 'rb') as fid:
@@ -102,7 +107,11 @@ class BBoxLabeledImage:
         return tf_example
 
     def convert_to_dict(self):
-
+        """Converts BBoxLabeledImage object to a dictionary representation of itself
+        
+        Returns:
+            to_return (dict): dictionary representation of object
+        """
         to_return = {}
 
         to_return['image_id'] = str(self.image_id)
@@ -138,6 +147,11 @@ class BoundingBox:
             self.label, self.xmin, self.xmax, self.ymin, self.ymax)
 
     def convert_to_dict(self):
+        """Converts BoundingBox object to a dictionary representation of itself
+        
+        Returns:
+            to_return (dict): dictionary representation of object
+        """
         to_return = vars(self)
 
         #Can't JSON out numpy custom types.

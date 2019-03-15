@@ -84,8 +84,8 @@ if user_confirms(
                 })
             print(
                 Fore.GREEN +
-                "ℹ There are {} images that meet the filter criteria selected.".
-                format(len(subset)))
+                "ℹ There are {} images that meet the filter criteria selected."
+                .format(len(subset)))
             len_subsets.append(len(subset))
 
             if not user_confirms(
@@ -109,8 +109,8 @@ if user_confirms(
     sets_to_join = []
     for set_name, set_data in sets.items():
         how_many = user_input(
-            message='How many images of set "{}" would you like to use? (?/{})'.
-            format(set_name, len(set_data)),
+            message='How many images of set "{}" would you like to use? (?/{})'
+            .format(set_name, len(set_data)),
             validator=IntegerValidator)
         n = int(how_many)
         sets_to_join.append(set_data.sample(n, replace=False, random_state=42))

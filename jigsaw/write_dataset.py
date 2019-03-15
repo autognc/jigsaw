@@ -24,12 +24,11 @@ Dataset Structure:
                 ...
 """
 
-# --- Imports.
 import os, shutil, time, json
 import numpy as np
 
 from datetime import datetime
-from random import shuffle
+from random import shuffle, seed
 from pathlib import Path
 
 import contextlib2
@@ -39,13 +38,15 @@ from sklearn.model_selection import KFold
 from mask import LabeledImageMask
 from bounding_box import BBoxLabeledImage
 
-# --- Variables.
-default_test_percentage = 0.2
-default_num_folds = 5
-default_out_path = Path.cwd()
+seed(0)
 
 
 def delete_dir(path):
+    """Deletes all files and folders in specified directory
+    
+    Args:
+        path (Path object): target directory
+    """
     if os.path.isdir(path):
         print("Deleting contents of", path,
               "you've got five seconds to cancel this.")
@@ -68,6 +69,15 @@ def delete_dir(path):
 
 
 def split_data(obj_list, test_percent=0.2):
+    """Splits obj_list into test/dev sets
+    
+    Args:
+        obj_list (list): list of objects to divide into test/dev
+        test_percent (int): percentage of objects in the test set
+    
+    Returns:
+        tuple of two lists. The first list is test, second dev
+    """
     if len(obj_list) == 0:
         raise Exception("Empty object list passed.")
 
@@ -80,7 +90,16 @@ def split_data(obj_list, test_percent=0.2):
     return (test, dev)
 
 
-def divide_into_folds(obj_list, num_folds=default_num_folds):
+def divide_into_folds(obj_list, num_folds=5):
+    """Splits obj_list into num_folds folds using sklearn's KFold
+    
+    Args:
+        obj_list (list): list of objects to divide into test/dev
+        num_folds (int): number of folds to produce
+    
+    Returns:
+        tuple of two lists. The first list is test, second dev
+    """
     key_to_object = dict()
     key_list = []
 
@@ -91,7 +110,7 @@ def divide_into_folds(obj_list, num_folds=default_num_folds):
     key_list = np.array(key_list)
 
     # NOTE: random_state variable sets seed.
-    kfold = KFold(n_splits=num_folds, shuffle=True, random_state=1)
+    kfold = KFold(n_splits=num_folds, shuffle=True, random_state=0)
 
     divided_list_of_lists = []
     for train_index, validation_index in kfold.split(key_list):
@@ -113,6 +132,12 @@ def divide_into_folds(obj_list, num_folds=default_num_folds):
 
 
 def write_out_fold(path, fold_data):
+    """Writes out the fold_data to specified path
+    
+    Args:
+        path (Path): directory to write folds out to
+        fold_data (list): list of tuples, each tuple is (train, validation) sets
+    """
     record_path = path / 'tf'
     if not os.path.exists(record_path):
         os.makedirs(record_path)
@@ -128,6 +153,12 @@ def write_out_fold(path, fold_data):
 
 
 def write_out_tf_examples(objects, path):
+    """Writes out list of objects out as a single tf_example
+    
+    Args:
+        objects (list): list of objects to put into the tf_example 
+        path (Path): directory to write this tf_example to, encompassing the name
+    """
     num_shards = (len(objects) // 1000) + 1
 
     with contextlib2.ExitStack() as tf_record_close_stack:
@@ -143,6 +174,12 @@ def write_out_tf_examples(objects, path):
 
 # Only BBLI has a convert_to_dict method for now, hence type check.
 def write_obj_to_json(obj: BBoxLabeledImage, path):
+    """Writes object (specifically our custom BBoxLabeledImage) out as json
+    
+    Args:
+        obj (BBoxLabeledImage): object to write out as json
+        path (Path): directory to write this json object to
+    """
     obj_converted_to_dict = obj.convert_to_dict()
 
     with open(path, 'w') as outfile:
@@ -150,6 +187,12 @@ def write_obj_to_json(obj: BBoxLabeledImage, path):
 
 
 def write_related_data(objects, path):
+    """Writes related data for each object in objects list
+    
+    Args:
+        objects (list): objects to write out related data for
+        path (Path): directory to write this related data to
+    """
     if not os.path.exists(path):
         os.makedirs(path)
 
@@ -158,7 +201,7 @@ def write_related_data(objects, path):
     bbli_folder_ext_pairs = [('images', '.jpg'), ('json', '_meta.json'),
                              ('', '_boxes.json')]
 
-    data_path = default_out_path / 'data'
+    data_path = Path.cwd() / 'data'
 
     for obj in objects:
         if isinstance(obj, LabeledImageMask):
@@ -188,11 +231,19 @@ def write_related_data(objects, path):
 
 
 def write_dataset(obj_list,
-                  test_percent=default_test_percentage,
-                  num_folds=default_num_folds,
-                  out_dir: Path = default_out_path,
+                  test_percent=0.2,
+                  num_folds=5,
+                  out_dir: Path = Path.cwd(),
                   custom_dataset_name='dataset'):
-
+    """Main driver for this file
+    
+    Args:
+        obj_list (list): objects that will be transformed into usable dataset
+        test_percent (float): percent of data that'll be test data
+        num_folds (int): number of folds to write to
+        out_dir (Path): directory to write this dataset to
+        custom_dataset_name (str): name of the dataset's containing folder
+    """
     dataset_path = out_dir / 'dataset' / custom_dataset_name
     delete_dir(dataset_path)
 
@@ -224,7 +275,7 @@ def write_metadata(
         image_ids,
         filters,
         transforms,
-        out_dir: Path = default_out_path,
+        out_dir: Path = Path.cwd(),
 ):
     """Writes out a metadata file in JSON format
 
@@ -237,7 +288,7 @@ def write_metadata(
             dataset (either dev or test)
         filters (dict): a dictionary representing filter metadata
         transforms (dict): a dictionary representing transform metadata
-        out_dir (Path, optional): Defaults to default_out_path.
+        out_dir (Path, optional): Defaults to Path.cwd().
     """
     dataset_path = out_dir / 'dataset' / name
     metadata_filepath = dataset_path / 'metadata.json'
@@ -255,12 +306,12 @@ def write_metadata(
         json.dump(metadata, outfile)
 
 
-def write_label_map(name, out_dir: Path = default_out_path):
+def write_label_map(name, out_dir: Path = Path.cwd()):
     """Writes out the TensorFlow Object Detection Label Map
     
     Args:
         name (str): the name of the dataset
-        out_dir (Path, optional): Defaults to default_out_path.
+        out_dir (Path, optional): Defaults to Path.cwd().
     """
     dataset_path = out_dir / 'dataset' / name
     label_map_filepath = dataset_path / 'label_map.pbtxt'
