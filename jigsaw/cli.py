@@ -3,8 +3,8 @@ from __future__ import print_function, unicode_literals
 
 import random
 import numpy as np
-random.seed(0)
-np.random.seed(0)
+random.seed(42)
+np.random.seed(42)
 
 from pathlib import Path
 
