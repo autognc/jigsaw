@@ -19,7 +19,7 @@ def list_to_choices(l, sort=True):
             should be sorted alphabetically.
     
     Returns:
-        list: a list of dicts in PyInquirer format
+        list: a list of dicts in questionary format
     """
     if sort:
         l = sorted(l)
@@ -132,4 +132,16 @@ class IntegerValidator(Validator):
         except ValueError:
             raise ValidationError(
                 message='Please enter a valid integer',
+                cursor_position=len(document.text))  # Move cursor to end
+
+
+# TODO: fix validator
+class FilepathValidator(Validator):
+    def validate(self, document):
+        ok = regex.match(
+            r"^(([a-zA-Z]:)|((\\|/){1,2}\w+)\$?)((\\|/)(\w[\w ]*.*))+\.([a-zA-Z0-9]+)$",
+            document.text)
+        if not ok:
+            raise ValidationError(
+                message='Please enter a valid filepath',
                 cursor_position=len(document.text))  # Move cursor to end

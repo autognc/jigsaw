@@ -4,7 +4,7 @@ from queue import Queue
 from threading import Thread
 import pandas as pd
 
-from jigsaw.mask import LabeledImageMask
+from jigsaw.data_models import mask
 
 
 def load_labels(skip_background=True):
@@ -18,10 +18,11 @@ def load_labels(skip_background=True):
     label_set = set()
     cwd = Path.cwd()
     data_dir = cwd / 'data'
-    labels_dir = data_dir / 'labels'
 
-    os.chdir(labels_dir)
+    os.chdir(data_dir)
     for file in os.scandir():
+        if not file.name.endswith("_labels.csv"):
+            continue
         contents = pd.read_csv(file.name)
         labels = contents["label"].tolist()
         for label in labels:
@@ -63,7 +64,8 @@ def perform_transforms(transforms, image_ids, num_threads=20):
             image_id = queue.get()
             if image_id is None:
                 break
-            labeled_image_mask = LabeledImageMask.from_files(image_id)
+            labeled_image_mask = mask.model.LabeledImageMask.construct(
+                image_id=image_id)
             for transform in transforms:
                 transform.perform_on_image(labeled_image_mask)
             queue.task_done()

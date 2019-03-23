@@ -20,11 +20,10 @@ def load_metadata():
     tags_df = pd.DataFrame()
     cwd = Path.cwd()
     data_dir = cwd / 'data'
-    json_dir = data_dir / 'json'
 
-    os.chdir(json_dir)
+    os.chdir(data_dir)
     for dir_entry in os.scandir():
-        if not dir_entry.name.endswith("meta.json"):
+        if not dir_entry.name.endswith("_meta.json"):
             continue
         image_id = dir_entry.name.rstrip("_meta.json")
         with open(dir_entry.name, "r") as read_file:

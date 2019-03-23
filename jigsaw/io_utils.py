@@ -12,8 +12,8 @@ import boto3
 import cv2
 import numpy as np
 
-from mask import LabeledImageMask
-from bounding_box import BBoxLabeledImage
+from jigsaw.mask import LabeledImageMask
+from jigsaw.bounding_box import BBoxLabeledImage
 
 
 def download_image_and_save(image_url, destination):
@@ -45,13 +45,132 @@ def load_remote_image(image_url):
     return image
 
 
-def download_json_metadata_from_s3(prefix="", num_threads=20):
+def copy_data_locally(source_dir,
+                      condition_func=lambda filename: True,
+                      num_threads=20):
+    """Copies data from a local source into Jigsaw given some condition
+    
+    Args:
+        source_dir (str or pathlib `Path`): the source directory from which
+            data should be copied
+        condition_func (function, optional): a function that uses the filename
+            to determine whether data should be copied. This allows for only
+            copying portions of the source data if desired. Defaults to True
+            for all filenames.
+        num_threads (int, optional): Defaults to 20. Number of threads
+            performing concurrent copies.
+    """
+    # convert the source directory from a string to a pathlib Path if necessary
+    if isinstance(source_dir, str):
+        source_dir = Path(source_dir)
+
+    cwd = Path.cwd()
+    data_dir = cwd / 'data'
+    try:
+        os.makedirs(data_dir)
+    except FileExistsError:
+        pass
+
+    def copy_object(queue):
+        while True:
+            filepath = queue.get()
+            if filepath is None:
+                break
+            shutil.copy(filepath, data_dir.absolute())
+            queue.task_done()
+
+    # create a queue for objects that need to be copied
+    # and spawn threads to copy them concurrently
+    copy_queue = Queue(maxsize=0)
+    workers = []
+    for worker in range(num_threads):
+        worker = Thread(target=copy_object, args=(copy_queue, ))
+        worker.setDaemon(True)
+        worker.start()
+        workers.append(worker)
+
+    for file in source_dir.iterdir():
+        if condition_func(file.name) and not (data_dir / file.name).exists():
+            copy_queue.put(file.absolute())
+
+    copy_queue.join()
+    for _ in range(num_threads):
+        copy_queue.put(None)
+    for worker in workers:
+        worker.join()
+
+
+def download_data_from_s3(bucket_name,
+                          condition_func=lambda filename: True,
+                          num_threads=20):
+    """Downloads data from S3 into Jigsaw given some condition
+    
+    Args:
+        bucket_name (str): the name of the S3 bucket to download from
+        condition_func ([type], optional): a function that uses the filename
+            to determine whether data should be downloaded. This allows for
+            only downloading portions of the source data if desired. Defaults
+            to True for all filenames.
+        num_threads (int, optional): Defaults to 20. Number of threads
+            performing concurrent downloads.
+    """
+
+    # simple method for threads to pull from a queue and download JSON files
+    def download_object(queue):
+        while True:
+            obj = queue.get()
+            if obj is None:
+                break
+            obj.Object().download_file(obj.key)
+            # TODO: test for files with prefixes here
+            queue.task_done()
+
+    cwd = Path.cwd()
+    data_dir = cwd / 'data'
+    try:
+        os.makedirs(data_dir)
+    except FileExistsError:
+        pass
+    os.chdir(data_dir)
+
+    # create a queue for objects that need to be copied
+    # and spawn threads to copy them concurrently
+    download_queue = Queue(maxsize=0)
+    workers = []
+    for worker in range(num_threads):
+        worker = Thread(target=download_object, args=(download_queue, ))
+        worker.setDaemon(True)
+        worker.start()
+        workers.append(worker)
+
+    # loop through the files in the bucket and add them to the queue if they
+    # satisfy the condition_func
+    s3 = boto3.resource("s3")
+    bucket = s3.Bucket(bucket_name)
+    for obj in bucket.objects.all():
+        filename = obj.key.split("/")[-1]
+        if condition_func(filename) and not (data_dir / filename).exists():
+            download_queue.put(obj)
+
+    # wait for the queue to be empty, then join all threads
+    download_queue.join()
+    for _ in range(num_threads):
+        download_queue.put(None)
+    for worker in workers:
+        worker.join()
+
+    os.chdir(cwd)
+
+
+def download_json_metadata_from_s3(bucket_name, prefix="", num_threads=20):
     """Downloads JSON metadata files for a set of images with a given S3 prefix
 
     This function downloads the JSON files and puts them in a folder called
     "json" in the current working directory.
 
     Args:
+        bucket_name (str): the name of the bucket that contains the JSON
+            metadata.
         prefix (str): Defaults to "". The S3 prefix (conceptually
             similar to a folder) with which you want to filter images
         num_threads (int): Defaults to 20. The number of threads that should be
@@ -91,7 +210,7 @@ def download_json_metadata_from_s3(prefix="", num_threads=20):
     # loop through the files in the bucket and filter for JSON metadata
     # files for only labeled images; add them to the queue
     s3 = boto3.resource("s3")
-    bucket = s3.Bucket(os.environ["LABELED_BUCKET_NAME"])
+    bucket = s3.Bucket(bucket_name)
     for obj in bucket.objects.filter(Prefix=prefix):
         if obj.key.endswith("meta.json"):
             download_queue.put(obj)
@@ -376,10 +495,11 @@ def load_LabeledImageMasks(image_ids, num_threads=20):
     return labeled_image_masks
 
 
-def upload_dataset(directory, num_threads=20):
+def upload_dataset(bucket_name, directory, num_threads=20):
     """Recursively uploads a directory to S3
     
     Args:
+        bucket_name (str): the name of the S3 bucket to upload to
         directory (str): the absolute path of a directory whose contents
             should be uploaded to S3; the directory name is used as the S3
             prefix for all uploaded files
@@ -393,8 +513,7 @@ def upload_dataset(directory, num_threads=20):
             if obj is None:
                 break
             abspath, s3_path = obj
-            s3.meta.client.upload_file(
-                abspath, os.environ["DATASETS_BUCKET_NAME"], s3_path)
+            s3.meta.client.upload_file(abspath, bucket_name, s3_path)
             queue.task_done()
 
     # create a queue for objects that need to be uploaded
