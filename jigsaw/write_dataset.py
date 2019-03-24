@@ -10,7 +10,7 @@ Dataset Structure:
         /test/
             images + truth data
         /dev/
-            /standard/ <-- *replica of fold_0*
+            /standard/ <-- *all dev data put in train.record, test.record*
             /fold_i/
                 /tf/
                     train.record
@@ -78,6 +78,10 @@ def split_data(obj_list, test_percent=0.2):
     """
     if len(obj_list) == 0:
         raise Exception("Empty object list passed.")
+    if len(obj_list) == 1:
+        raise Exception(
+            "Object list of length 1 passed. Can't build test and dev set with this."
+        )
 
     shuffle(obj_list)
     index_to_split_on = max(1, int(len(obj_list) * test_percent))
@@ -96,7 +100,7 @@ def divide_into_folds(obj_list, num_folds=5):
         num_folds (int): number of folds to produce
     
     Returns:
-        tuple of two lists. The first list is test, second dev
+        tuple of two lists. The first list is train, second validation
     """
     key_to_object = dict()
     key_list = []
@@ -129,7 +133,7 @@ def divide_into_folds(obj_list, num_folds=5):
     return divided_list_of_lists
 
 
-def write_out_fold(path, fold_data):
+def write_out_fold(path, fold_data, is_standard=False):
     """Writes out the fold_data to specified path
     
     Args:
@@ -140,12 +144,34 @@ def write_out_fold(path, fold_data):
     if not os.path.exists(record_path):
         os.makedirs(record_path)
 
+    # Making it so for standard set, validation set size isn't reliant on KFold size.
+    if is_standard:
+        fold_data = split_data(fold_data[0] + fold_data[1])
+        fold_data = (fold_data[1], fold_data[0])
+
     train_subset = fold_data[0]
     validation_subset = fold_data[1]
 
     test_record_data, train_record_data = split_data(train_subset)
 
     write_related_data(validation_subset, path / 'validation')
+    write_out_tf_examples(train_record_data, record_path / 'train.record')
+    write_out_tf_examples(test_record_data, record_path / 'test.record')
+
+
+def write_out_complete_set(path, data):
+    """Writes out the special complete set into 'dev'. No validation data.
+    
+    Args:
+        path (Path): directory to write complete set out to
+        data (list): objects to write to the complete set
+    """
+    record_path = path / 'tf'
+    if not os.path.exists(record_path):
+        os.makedirs(record_path)
+
+    test_record_data, train_record_data = split_data(data)
+
     write_out_tf_examples(train_record_data, record_path / 'train.record')
     write_out_tf_examples(test_record_data, record_path / 'test.record')
 
@@ -256,10 +282,13 @@ def write_dataset(obj_list,
 
     for fold_num, fold in enumerate(folds):
 
-        # The special standard set.
+        # The special standard and complete set.
         if fold_num == 0:
-            fold_path = dev_path / 'standard'
-            write_out_fold(fold_path, fold)
+            standard_path = dev_path / 'standard'
+            write_out_fold(standard_path, fold, is_standard=True)
+
+            complete_path = dev_path / 'complete'
+            write_out_complete_set(complete_path, fold[0] + fold[1])
 
         fold_path = dev_path / str('fold_' + str(fold_num))
         write_out_fold(fold_path, fold)
