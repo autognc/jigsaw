@@ -10,7 +10,8 @@ Dataset Structure:
         /test/
             images + truth data
         /dev/
-            /standard/ <-- *all dev data put in train.record, test.record*
+            /complete/ <-- *all of dev set, no validation set*
+            /standard/ <-- *standard 80/20 split for records/validation*
             /fold_i/
                 /tf/
                     train.record
