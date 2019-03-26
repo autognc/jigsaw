@@ -1,9 +1,15 @@
+import importlib
+import os
 import shutil
+import yaml
 
 from abc import ABC, abstractmethod
 from pathlib import Path
 from queue import Queue
 from threading import Thread
+from types import ModuleType
+
+from jigsaw import models
 
 
 class LabeledImage(ABC):
@@ -99,3 +105,15 @@ class LabeledImage(ABC):
             if filepath.exists():
                 shutil.copy(
                     str(filepath.absolute()), str(destination.absolute()))
+
+
+def load_models():
+    parent_dir = os.path.dirname(os.path.realpath(__file__))
+    data_models_yml = Path(parent_dir) / "data_models.yml"
+    with open(data_models_yml) as f:
+        data_models = yaml.safe_load(f)
+    model_list = []
+    for data_model in data_models:
+        module = importlib.import_module(data_model["parent_module"])
+        model_list.append(getattr(module, data_model["model_class"]))
+    return model_list

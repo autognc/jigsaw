@@ -15,7 +15,9 @@ from jigsaw.data_interface import LabeledImage
 from jigsaw.cli_utils import (user_confirms, user_input, user_selection,
                               FilenameValidator, IntegerValidator)
 from jigsaw.io_utils import copy_data_locally, download_data_from_s3
-from jigsaw.data_models import mask
+
+from jigsaw.models.mask.filtering import (load_metadata, and_filter, or_filter, join_sets)
+from jigsaw.models.mask.transforms import (load_labels, perform_transforms, Transform)
 
 
 class LabeledImageMask(LabeledImage):
@@ -281,7 +283,7 @@ class LabeledImageMask(LabeledImage):
 
         spinner.succeed(text=spinner.text + "Complete.")
 
-        tags_df = mask.filtering.load_metadata()
+        tags_df = load_metadata()
         filter_metadata = {"groups": []}
         # ask the user if they would like to perform filtering
         # if yes, enter a loop that supplies filter options
@@ -322,13 +324,13 @@ class LabeledImageMask(LabeledImage):
                         selection_type="list")
 
                     if filter_type == "AND (intersection)":
-                        subset = mask.filtering.and_filter(subset, selected_tags)
+                        subset = and_filter(subset, selected_tags)
                         this_group_filters.append({
                             "type": "AND",
                             "tags": selected_tags
                         })
                     elif filter_type == "OR (union)":
-                        subset = mask.filtering.or_filter(subset, selected_tags)
+                        subset = or_filter(subset, selected_tags)
                         this_group_filters.append({
                             "type": "OR",
                             "tags": selected_tags
@@ -378,7 +380,7 @@ class LabeledImageMask(LabeledImage):
                     if group["name"] == set_name:
                         group["number_included"] = n
 
-            image_ids = mask.filtering.join_sets(sets_to_join).index.tolist()
+            image_ids = join_sets(sets_to_join).index.tolist()
 
         else:
             image_ids = tags_df.index.tolist()
@@ -424,7 +426,7 @@ class LabeledImageMask(LabeledImage):
             spinner = Halo(
                 text="Loading image labels...", text_color="magenta")
             spinner.start()
-            labels = mask.transforms.load_labels()
+            labels = load_labels()
             spinner.succeed(text=spinner.text + "Complete.")
 
             while True:
@@ -452,7 +454,7 @@ class LabeledImageMask(LabeledImage):
                             for label in labels
                         ]
                         transform_list.append(
-                            mask.transforms.Transform(
+                            Transform(
                                 transform_type="rename",
                                 original=original,
                                 new=new))
@@ -477,7 +479,7 @@ class LabeledImageMask(LabeledImage):
                             labels.remove(original)
                         labels.append(new)
                         transform_list.append(
-                            mask.transforms.Transform(
+                            Transform(
                                 transform_type="merge",
                                 original=originals,
                                 new=new))
@@ -490,7 +492,7 @@ class LabeledImageMask(LabeledImage):
             spinner = Halo(
                 text="Performing transformations...", text_color="magenta")
             spinner.start()
-            mask.transforms.perform_transforms(transform_list, image_ids=image_ids)
+            perform_transforms(transform_list, image_ids=image_ids)
             spinner.succeed(text=spinner.text + "Complete.")
 
         # collect metadata on transforms

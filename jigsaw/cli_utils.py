@@ -1,6 +1,6 @@
 from __future__ import print_function, unicode_literals
 
-import itertools
+import os
 import regex
 import sys
 import threading
@@ -8,6 +8,12 @@ import time
 
 from colorama import Fore
 from questionary import prompt, Validator, ValidationError
+
+
+def set_proper_cwd():
+    inner_jigsaw_dir = os.path.dirname(os.path.realpath(__file__))
+    outer_jigsaw_dir = os.path.dirname(inner_jigsaw_dir)
+    os.chdir(outer_jigsaw_dir)
 
 
 def list_to_choices(l, sort=True):
@@ -118,7 +124,7 @@ def user_confirms(message, default=False):
 
 class FilenameValidator(Validator):
     def validate(self, document):
-        ok = regex.match("^[0-9a-zA-Z_]+$", document.text)
+        ok = regex.match(r"^[0-9a-zA-Z_]+$", document.text)
         if not ok:
             raise ValidationError(
                 message='Please enter a valid name (0-9, a-z, A-Z, _)',
@@ -135,13 +141,14 @@ class IntegerValidator(Validator):
                 cursor_position=len(document.text))  # Move cursor to end
 
 
-# TODO: fix validator
-class FilepathValidator(Validator):
+class DirectoryPathValidator(Validator):
     def validate(self, document):
-        ok = regex.match(
-            r"^(([a-zA-Z]:)|((\\|/){1,2}\w+)\$?)((\\|/)(\w[\w ]*.*))+\.([a-zA-Z0-9]+)$",
-            document.text)
-        if not ok:
+        try:
+            if not os.path.exists(document.text):
+                raise ValidationError(
+                    message='The directory at this location does not exist',
+                    cursor_position=len(document.text))  # Move cursor to end
+        except:
             raise ValidationError(
-                message='Please enter a valid filepath',
+                message='Please enter a valid directory path',
                 cursor_position=len(document.text))  # Move cursor to end

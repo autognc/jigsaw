@@ -4,14 +4,14 @@ from queue import Queue
 from threading import Thread
 import pandas as pd
 
-from jigsaw.data_models import mask
+from jigsaw.models import mask
 
 
 def load_labels(skip_background=True):
     """Loads a list of labels from all label map CSVs
         skip_background (bool, optional): Defaults to True. Whether or not to
             skip the label class "Background"
-    
+   
     Returns:
         list: a sorted list of label names (unique) across all images
     """

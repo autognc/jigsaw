@@ -14,19 +14,23 @@ from colorama import init, Fore
 from halo import Halo
 
 from jigsaw.cli_utils import (list_to_choices, FilenameValidator,
-                              IntegerValidator, FilepathValidator,
-                              user_selection, user_input, user_confirms)
+                              IntegerValidator, DirectoryPathValidator,
+                              user_selection, user_input, user_confirms,
+                              set_proper_cwd)
+from jigsaw.data_interface import load_models
 from jigsaw.filtering import load_metadata, and_filter, or_filter, join_sets
 from jigsaw.io_utils import (
     download_image_data_from_s3, download_json_metadata_from_s3,
     load_BBoxLabeledImages, load_LabeledImageMasks, upload_dataset)
 from jigsaw.transforms import load_labels, Transform, perform_transforms
 from jigsaw.write_dataset import write_dataset, write_metadata, write_label_map
-from jigsaw.data_models import mask
+from jigsaw.models.mask.model import LabeledImageMask
 
 init()
 
 print(Fore.GREEN + "Welcome to Jigsaw!")
+
+set_proper_cwd()
 
 cwd = Path.cwd()
 data_dir = cwd / 'data'
@@ -36,16 +40,16 @@ except FileExistsError:
     shutil.rmtree(data_dir)
     os.makedirs(data_dir)
 
+data_models = load_models()
+training_types = [model.training_type for model in data_models]
+
 # ask the user which type of training should be performed
 training_type = user_selection(
     message="Which type of training would you like to prepare for?",
-    choices=["Bounding Box", "Semantic Segmentation"],
+    choices=training_types,
     selection_type="list")
 
-if training_type == "Semantic Segmentation":
-    model = mask.model.LabeledImageMask
-else:
-    raise NotImplementedError
+model = data_models[training_types.index(training_type)]
 
 data_origin = user_selection(
     message="Would you like to use local data or download data from S3?",
@@ -53,11 +57,10 @@ data_origin = user_selection(
     selection_type="list")
 
 if data_origin == "Local":
-    # TODO: fix validator
     data_path = user_input(
         message="Enter the filepath at which the data is located:",
         default=str(Path.home().absolute()),
-        validator=FilepathValidator)
+        validator=DirectoryPathValidator)
     image_ids, filter_metadata = model.filter_and_load(
         data_source=data_origin, data_filepath=data_path)
 
