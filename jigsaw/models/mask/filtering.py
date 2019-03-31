@@ -4,11 +4,29 @@ import os
 import pandas as pd
 
 from pathlib import Path
-from jigsaw.io_utils import download_json_metadata_from_s3
+
+from jigsaw.cli_utils import Spinner
+from jigsaw.io_utils import copy_data_locally, download_data_from_s3
+
+
+def ingest_metadata(data_source, **kwargs):
+    only_json_func = lambda filename: filename.endswith("_meta.json")
+
+    spinner = Spinner(text="Loading metadata...", text_color="magenta")
+    spinner.start()
+
+    if data_source == "Local":
+        copy_data_locally(
+            source_dir=kwargs["data_filepath"], condition_func=only_json_func)
+    elif data_source == "S3":
+        download_data_from_s3(
+            bucket_name=kwargs["bucket"], condition_func=only_json_func)
+
+    spinner.succeed(text=spinner.text + "Complete.")
 
 
 def load_metadata():
-    """Downloads all image metadata JSONs and loads their tags
+    """Loads all image metadata JSONs and loads their tags
     
     Returns:
         DataFrame: a pandas DataFrame storing image IDs and associated tags;

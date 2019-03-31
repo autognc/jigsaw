@@ -8,15 +8,13 @@ import PIL
 import io
 
 from colorama import init, Fore
-from halo import Halo
 from object_detection.utils import dataset_util
 
 from jigsaw.data_interface import LabeledImage
 from jigsaw.cli_utils import (user_confirms, user_input, user_selection,
-                              FilenameValidator, IntegerValidator)
+                              FilenameValidator, IntegerValidator, Spinner)
 from jigsaw.io_utils import copy_data_locally, download_data_from_s3
-
-from jigsaw.models.mask.filtering import (load_metadata, and_filter, or_filter, join_sets)
+from jigsaw.models.mask.filtering import (ingest_metadata, load_metadata, and_filter, or_filter, join_sets)
 from jigsaw.models.mask.transforms import (load_labels, perform_transforms, Transform)
 
 
@@ -268,29 +266,17 @@ class LabeledImageMask(LabeledImage):
 
     @classmethod
     def filter_and_load(cls, data_source, **kwargs):
-        only_json_func = lambda filename: filename.endswith("_meta.json")
-
-        spinner = Halo(text="Loading metadata...", text_color="magenta")
-        spinner.start()
-
-        if data_source == "Local":
-            copy_data_locally(
-                source_dir=kwargs["data_filepath"],
-                condition_func=only_json_func)
-        elif data_source == "S3":
-            download_data_from_s3(
-                bucket_name=kwargs["bucket"], condition_func=only_json_func)
-
-        spinner.succeed(text=spinner.text + "Complete.")
+        ingest_metadata(data_source, **kwargs)
 
         tags_df = load_metadata()
         filter_metadata = {"groups": []}
+        
         # ask the user if they would like to perform filtering
         # if yes, enter a loop that supplies filter options
         # if no, skip
         if user_confirms(
                 message="Would you like to filter out any of the data?",
-                default=True):
+                default=False):
             sets = {}
             # outer loop to determine how many sets the user will create
             while True:
@@ -369,7 +355,8 @@ class LabeledImageMask(LabeledImage):
                     message=
                     'How many images of set "{}" would you like to use? (?/{})'
                     .format(set_name, len(set_data)),
-                    validator=IntegerValidator)
+                    validator=IntegerValidator,
+                    default=str(len(set_data)))
                 n = int(how_many)
                 sets_to_join.append(
                     set_data.sample(n, replace=False, random_state=42))
@@ -394,7 +381,7 @@ class LabeledImageMask(LabeledImage):
                     return True
 
         if data_source == "Local":
-            spinner = Halo(
+            spinner = Spinner(
                 text="Copying data locally into Jigsaw...",
                 text_color="magenta")
             spinner.start()
@@ -402,7 +389,7 @@ class LabeledImageMask(LabeledImage):
                 source_dir=kwargs["data_filepath"], condition_func=need_file)
 
         elif data_source == "S3":
-            spinner = Halo(
+            spinner = Spinner(
                 text="Downloading data from S3...",
                 text_color="magenta")
             spinner.start()
@@ -423,7 +410,7 @@ class LabeledImageMask(LabeledImage):
         if user_confirms(
                 message="Would you like to perform any data transformations?",
                 default=False):
-            spinner = Halo(
+            spinner = Spinner(
                 text="Loading image labels...", text_color="magenta")
             spinner.start()
             labels = load_labels()
@@ -489,7 +476,7 @@ class LabeledImageMask(LabeledImage):
                                 default=False):
                             break
 
-            spinner = Halo(
+            spinner = Spinner(
                 text="Performing transformations...", text_color="magenta")
             spinner.start()
             perform_transforms(transform_list, image_ids=image_ids)

@@ -1,0 +1,3 @@
+- parent_module: jigsaw.models.mask.model
+  model_class: LabeledImageMask
+  sample_data_relpath: ../models/mask/testing/sample_data

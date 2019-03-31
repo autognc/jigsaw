@@ -7,7 +7,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from queue import Queue
 from threading import Thread
-from types import ModuleType
 
 from jigsaw import models
 

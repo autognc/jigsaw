@@ -11,12 +11,11 @@ np.random.seed(42)
 from pathlib import Path
 
 from colorama import init, Fore
-from halo import Halo
 
 from jigsaw.cli_utils import (list_to_choices, FilenameValidator,
                               IntegerValidator, DirectoryPathValidator,
                               user_selection, user_input, user_confirms,
-                              set_proper_cwd)
+                              set_proper_cwd, Spinner)
 from jigsaw.data_interface import load_models
 from jigsaw.filtering import load_metadata, and_filter, or_filter, join_sets
 from jigsaw.io_utils import (
@@ -88,7 +87,7 @@ k_folds_specified = user_input(
 comments = user_input("Add any notes or comments about this dataset here:")
 user = user_input("Please enter your first and last name:")
 
-spinner = Halo(text="Writing out dataset locally...", text_color="magenta")
+spinner = Spinner(text="Writing out dataset locally...", text_color="magenta")
 spinner.start()
 
 labeled_images = model.construct_all(image_ids)

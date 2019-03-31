@@ -184,50 +184,6 @@ def write_obj_to_json(obj: BBoxLabeledImage, path):
         json.dump(obj_converted_to_dict, outfile)
 
 
-# def write_related_data(objects, path):
-#     """Writes related data for each object in objects list
-
-#     Args:
-#         objects (list): objects to write out related data for
-#         path (Path): directory to write this related data to
-#     """
-#     if not os.path.exists(path):
-#         os.makedirs(path)
-
-#     sem_folder_ext_pairs = [('images', '.jpg'), ('json', '_meta.json'),
-#                             ('labels', '_labels.csv'), ('masks', '_mask.png')]
-#     bbli_folder_ext_pairs = [('images', '.jpg'), ('json', '_meta.json'),
-#                              ('', '_boxes.json')]
-
-#     data_path = Path.cwd() / 'data'
-
-#     for obj in objects:
-#         if isinstance(obj, LabeledImageMask):
-#             for (location, ext) in sem_folder_ext_pairs:
-#                 name = obj.image_id + ext
-
-#                 orig_path = data_path / location / name
-#                 new_path = path / name
-
-#                 shutil.copyfile(orig_path, new_path)
-
-#         elif isinstance(obj, BBoxLabeledImage):
-#             for (location, ext) in bbli_folder_ext_pairs:
-#                 if location != '':
-#                     name = obj.image_id + ext
-
-#                     orig_path = data_path / location / name
-#                     new_path = path / name
-
-#                     shutil.copyfile(orig_path, new_path)
-#                 else:
-#                     write_obj_to_json(obj,
-#                                       path / str(obj.image_id + '_boxes.json'))
-
-#         else:
-#             raise Exception("Hmmm, don't recognize this object type.")
-
-
 def write_related_data(objects, path):
     if not os.path.exists(path):
         os.makedirs(path)

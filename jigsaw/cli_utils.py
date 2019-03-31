@@ -7,6 +7,7 @@ import threading
 import time
 
 from colorama import Fore
+from halo import Halo
 from questionary import prompt, Validator, ValidationError
 
 
@@ -48,6 +49,8 @@ def user_input(message, default="", validator=None):
     Returns:
         str: the user's response
     """
+    if in_test_mode():
+        return default
     if validator is not None:
         question = [
             {
@@ -88,6 +91,11 @@ def user_selection(message, choices, selection_type="list", sort_choices=True):
                      the list of the choices selected if "checkbox" is the 
                         selection_type
     """
+    if in_test_mode():
+        if selection_type == "list":
+            return choices[0]
+        elif selection_type == "checkbox":
+            return [choices[0]]
     question = [
         {
             "type": selection_type,
@@ -110,6 +118,8 @@ def user_confirms(message, default=False):
     Returns:
         bool: the user's response in bool format
     """
+    if in_test_mode():
+        return default
     question = [
         {
             "type": "confirm",
@@ -120,6 +130,34 @@ def user_confirms(message, default=False):
     ]
     answer = prompt(question)
     return answer["value"]
+
+
+def in_test_mode():
+    try:
+        return os.environ["TEST_MODE"]
+    except KeyError:
+        return False
+
+
+class Spinner:
+    """Wrapper class to prevent bugs with Halo in pytest (see Issue #97)
+    """
+
+    def __init__(self, text, text_color):
+        self.text = text
+        if in_test_mode():
+            return
+        self._spinner = Halo(text=text, text_color=text_color)
+
+    def start(self):
+        if in_test_mode():
+            return
+        self._spinner.start()
+
+    def succeed(self, text):
+        if in_test_mode():
+            return
+        self._spinner.succeed(text=text)
 
 
 class FilenameValidator(Validator):
