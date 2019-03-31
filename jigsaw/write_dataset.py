@@ -36,8 +36,8 @@ import contextlib2
 from object_detection.dataset_tools import tf_record_creation_util
 from sklearn.model_selection import KFold
 
-from mask import LabeledImageMask
-from bounding_box import BBoxLabeledImage
+from jigsaw.mask import LabeledImageMask
+from jigsaw.bounding_box import BBoxLabeledImage
 
 
 def delete_dir(path):
@@ -191,7 +191,7 @@ def write_out_tf_examples(objects, path):
             tf_record_close_stack, str(path.absolute()), num_shards)
 
         for index, object_item in enumerate(objects):
-            tf_example = object_item.convert_to_tf_example()
+            tf_example = object_item.export_as_TFExample()
             output_shard_index = index % num_shards
             output_tfrecords[output_shard_index].write(
                 tf_example.SerializeToString())
@@ -212,47 +212,11 @@ def write_obj_to_json(obj: BBoxLabeledImage, path):
 
 
 def write_related_data(objects, path):
-    """Writes related data for each object in objects list
-    
-    Args:
-        objects (list): objects to write out related data for
-        path (Path): directory to write this related data to
-    """
     if not os.path.exists(path):
         os.makedirs(path)
 
-    sem_folder_ext_pairs = [('images', '.jpg'), ('json', '_meta.json'),
-                            ('labels', '_labels.csv'), ('masks', '_mask.png')]
-    bbli_folder_ext_pairs = [('images', '.jpg'), ('json', '_meta.json'),
-                             ('', '_boxes.json')]
-
-    data_path = Path.cwd() / 'data'
-
     for obj in objects:
-        if isinstance(obj, LabeledImageMask):
-            for (location, ext) in sem_folder_ext_pairs:
-                name = obj.image_id + ext
-
-                orig_path = data_path / location / name
-                new_path = path / name
-
-                shutil.copyfile(orig_path, new_path)
-
-        elif isinstance(obj, BBoxLabeledImage):
-            for (location, ext) in bbli_folder_ext_pairs:
-                if location != '':
-                    name = obj.image_id + ext
-
-                    orig_path = data_path / location / name
-                    new_path = path / name
-
-                    shutil.copyfile(orig_path, new_path)
-                else:
-                    write_obj_to_json(obj,
-                                      path / str(obj.image_id + '_boxes.json'))
-
-        else:
-            raise Exception("Hmmm, don't recognize this object type.")
+        obj.copy_associated_files(path)
 
 
 def write_dataset(obj_list,
@@ -265,7 +229,7 @@ def write_dataset(obj_list,
     Args:
         obj_list (list): objects that will be transformed into usable dataset
         test_percent (float): percent of data that'll be test data
-        num_folds (int): number of folds to write to
+        num_folds (int): number of folds to write
         out_dir (Path): directory to write this dataset to
         custom_dataset_name (str): name of the dataset's containing folder
     """

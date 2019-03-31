@@ -5,7 +5,8 @@ import cv2
 from pathlib import Path
 import tensorflow as tf
 from object_detection.utils import dataset_util
-from mask import LabeledImageMask
+
+from jigsaw.mask import LabeledImageMask
 
 class BBoxLabeledImage:
     """Stores bounding-box-labeled image data and provides related operations

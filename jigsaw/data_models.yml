@@ -1,0 +1,2 @@
+- parent_module: jigsaw.models.mask.model
+  model_class: LabeledImageMask
