@@ -1,2 +1,4 @@
 - parent_module: jigsaw.models.mask.model
   model_class: LabeledImageMask
+- parent_module: jigsaw.models.bbox.model
+  model_class: BBoxLabeledImage

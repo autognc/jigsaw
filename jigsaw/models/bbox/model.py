@@ -6,73 +6,147 @@ from pathlib import Path
 import tensorflow as tf
 import PIL
 import io
+import os
+import xml.etree.ElementTree as ET
 
 from colorama import init, Fore
+from halo import Halo
 from object_detection.utils import dataset_util
 
 from jigsaw.data_interface import LabeledImage
 from jigsaw.cli_utils import (user_confirms, user_input, user_selection,
                               FilenameValidator, IntegerValidator, Spinner)
 from jigsaw.io_utils import copy_data_locally, download_data_from_s3
-from jigsaw.models.mask.filtering import (ingest_metadata, load_metadata, and_filter, or_filter, join_sets)
-from jigsaw.models.mask.transforms import (load_labels, perform_transforms, Transform)
+from jigsaw.models.bbox.filtering import (ingest_metadata, load_metadata, and_filter, or_filter, join_sets)
+from jigsaw.models.bbox.transforms import (load_labels, perform_transforms, Transform)
 
 
-class LabeledImageMask(LabeledImage):
-    """Stores pixel-wise-labeled image data and provides related operations
+class BBoxLabeledImage(LabeledImage):
+    """Stores bounding-box-labeled image data and provides related operations
 
     Attributes:
         image_id (str): the unique ID for the image and labeled data
         image_path (str): the path to the source image
-        mask_path (str): the path to the semantic image mask
-        label_masks (dict): a dict storing the labels (str) as keys and
-            matching pixel colors (3x1 numpy array) in the image mask as values
+        label_boxes (list): a list of BoundingBox objects that store the labels
+            and dimensions of each bounding box in the image
         xdim (int): width of the image (in pixels)
         ydim (int): height of the image (in pixels)
     """
-    _label_to_int_dict = {}
+    label_to_int_dict = {}
 
     associated_files = {
         "image": ".jpg",
         "metadata": "_meta.json",
         "mask": "_mask.png",
-        "labels": "_labels.csv"
+        "labels": "_labels.csv",
+        "PASCAL_VOC_labels": "_labels.xml"
     }
 
-    training_type = "Semantic Segmentation"
-
-    def __init__(self, image_id, image_path, mask_path, label_masks, xdim,
-                 ydim):
-        super().__init__(image_id)
+    training_type = "Bounding Box"
+    
+    def __init__(self, image_id, image_path, label_boxes, xdim, ydim):
+        self.image_id = image_id
         self.image_path = image_path
-        self.mask_path = mask_path
-        self.label_masks = label_masks
-        for label in label_masks:
-            self.add_label_int(label)
+        self.label_boxes = label_boxes
         self.xdim = xdim
         self.ydim = ydim
-
-    def renumber_label_to_int_dict(self):
-        for i, label in enumerate(LabeledImageMask._label_to_int_dict.keys()):
-            LabeledImageMask._label_to_int_dict[label] = i + 1
-
-    def delete_label_int(self, label):
-        if label in LabeledImageMask._label_to_int_dict.keys():
-            del LabeledImageMask._label_to_int_dict[label]
+    
+    @classmethod
+    def renumber_label_to_int_dict(cls):
+        for i, label in enumerate(BBoxLabeledImage.label_to_int_dict.keys()):
+            BBoxLabeledImage.label_to_int_dict[label] = i + 1
+    
+    @classmethod
+    def delete_label_int(cls, label):
+        if label in BBoxLabeledImage.label_to_int_dict.keys():
+            del BBoxLabeledImage.label_to_int_dict[label]
             # renumber all values
-            self.renumber_label_to_int_dict()
-
-    def add_label_int(self, label_to_add):
-        if label_to_add not in LabeledImageMask._label_to_int_dict.keys():
+            cls.renumber_label_to_int_dict()
+    
+    @classmethod
+    def add_label_int(cls, label_to_add):
+        if label_to_add not in BBoxLabeledImage.label_to_int_dict.keys():
             # add the new label
-            LabeledImageMask._label_to_int_dict[label_to_add] = None
+            BBoxLabeledImage.label_to_int_dict[label_to_add] = None
 
             # renumber all values
-            self.renumber_label_to_int_dict()
+            cls.renumber_label_to_int_dict()
+
+    @classmethod
+    def from_PASCAL_VOC(cls, image_id, image_filepath, labels_filepath):
+        label_boxes = []
+        tree = ET.parse(str(labels_filepath.absolute()))
+        root = tree.getroot()
+        size = root.find("size")
+        xdim = int(size.find("width").text)
+        ydim = int(size.find("height").text)
+        for member in root.findall('object'):
+            label = member.find("name").text
+            bndbox = member.find("bndbox")
+            xmin = int(bndbox.find("xmin").text)
+            xmax = int(bndbox.find("xmax").text)
+            ymin = int(bndbox.find("ymin").text)
+            ymax = int(bndbox.find("ymax").text)
+            cls.add_label_int(label)
+            box = BoundingBox(label, xmin, xmax, ymin, ymax)
+            label_boxes.append(box)
+        return BBoxLabeledImage(image_id, image_filepath, label_boxes, xdim, ydim)
+
+
+    @classmethod
+    def segment_by_instance(cls, mask):
+        instances = []
+        blurred = cv2.GaussianBlur(mask, (5, 5), 0)
+        contours, _ = cv2.findContours(blurred.copy(), cv2.RETR_EXTERNAL,
+                                        cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            instances.append({"xmin": x, "xmax": x + w, "ymin": y, "ymax": y + h})
+        return instances
+
+    @classmethod
+    def from_semantic_labels(cls, image_id, image_filepath, mask_filepath, labels_filepath, skip_background):
+        mask_filepath = str(
+            mask_filepath.absolute())  # cv2.imread doesn't like Path objects.
+
+        labels_df = pd.read_csv(labels_filepath, index_col="label")
+        image_mask = cv2.imread(mask_filepath)
+        ydim, xdim, _ = image_mask.shape
+
+        label_masks = {}
+        for label, color in labels_df.iterrows():
+            if label == "Background" and skip_background:
+                continue
+            color_bgr = np.array([color["B"], color["G"], color["R"]])
+            label_masks[label] = color_bgr
+        
+        label_boxes = []
+        image_mask = cv2.imread(mask_filepath)
+        for label, color in label_masks.items():
+            match = np.where((image_mask == color).all(axis=2))
+            y, x = match
+            if len(y) == 0 or len(x) == 0:
+                continue
+            cls.add_label_int(label)
+
+            mask = np.zeros(image_mask.shape, dtype=np.uint8)
+            mask[match] = (255, 255, 255)
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+            instances = cls.segment_by_instance(mask)
+            for instance in instances:
+                box = BoundingBox(label,
+                    instance["xmin"], instance["xmax"], instance["ymin"], instance["ymax"])
+                label_boxes.append(box)
+
+        bbox = BBoxLabeledImage(image_id, image_filepath, label_boxes, xdim, ydim)
+        os.remove(mask_filepath)
+        os.remove(labels_filepath)
+        bbox.save_changes()
+        return bbox
 
     @classmethod
     def construct(cls, image_id, **kwargs):
-        """Constructs a LabeledImageMask object from a set of standard files
+        """Constructs a BBoxLabeledImage object from a set of standard files
         
         Args:
             image_id (str): the unique ID for this image
@@ -88,24 +162,16 @@ class LabeledImageMask(LabeledImage):
 
         cwd = Path.cwd()
         data_dir = cwd / 'data'
-        mask_filepath = data_dir / str(image_id + "_mask.png")
-        mask_filepath = str(
-            mask_filepath.absolute())  # cv2.imread doesn't like Path objects.
-        labels_filepath = data_dir / str(image_id + "_labels.csv")
         image_filepath = data_dir / str(image_id + ".jpg")
 
-        labels_df = pd.read_csv(labels_filepath, index_col="label")
-        image_mask = cv2.imread(mask_filepath)
-        ydim, xdim, _ = image_mask.shape
-
-        label_masks = {}
-        for label, color in labels_df.iterrows():
-            if label == "Background" and skip_background:
-                continue
-            color_bgr = np.array([color["B"], color["G"], color["R"]])
-            label_masks[label] = color_bgr
-        return LabeledImageMask(image_id, image_filepath, mask_filepath,
-                                label_masks, xdim, ydim)
+        labels_xml_path = data_dir / (str(image_id) + "_labels.xml")
+        if labels_xml_path.exists():
+            return cls.from_PASCAL_VOC(image_id, image_filepath, labels_xml_path)
+        else:
+            mask_filepath = data_dir / str(image_id + "_mask.png")
+            labels_filepath = data_dir / str(image_id + "_labels.csv")
+            
+            return cls.from_semantic_labels(image_id, image_filepath, mask_filepath, labels_filepath, skip_background)
 
     def rename_label(self, original_label, new_label):
         """Renames a given label
@@ -115,19 +181,15 @@ class LabeledImageMask(LabeledImage):
             new_label (str): the new label name
         """
         # if the new label already exists, treat this as a merge
-        if new_label in self.label_masks.keys():
+        label_already_exists = new_label in [box.label for box in self.label_boxes]
+        if label_already_exists:
             self.merge_labels([original_label, new_label], new_label)
             return
 
-        # perform rename within the label_masks dict object attribute
-        try:
-            label_color = self.label_masks[original_label]
-            del self.label_masks[original_label]
-            self.label_masks[new_label] = label_color
-            self.save_label_changes()
-        except KeyError:
-            # this image does not have an instance of the original_label
-            return
+        for box in self.label_boxes:
+            if box.label == original_label:
+                box.label = new_label
+        self.save_changes()
 
         # handle the class attribute for label_to_int conversions
         self.delete_label_int(original_label)
@@ -143,65 +205,86 @@ class LabeledImageMask(LabeledImage):
         """
         # if the new_label already exists for any reason, add it to the list
         # of labels to be merged to avoid any issues
-        if new_label in self.label_masks.keys():
+        label_already_exists = new_label in [box.label for box in self.label_boxes]
+        if label_already_exists:
             original_labels.append(new_label)
-
-        merged_color = np.random.randint(256, size=3)
-        while True:
-            color_already_exists = False
-            for color in self.label_masks.values():
-                if np.array_equal(merged_color, color):
-                    color_already_exists = True
-            if color_already_exists:
-                merged_color = np.random.randint(256, size=3)
+        
+        new_label_boxes = []
+        for i, box in enumerate(self.label_boxes):
+            if box.label in original_labels:
+                try:
+                    new_xmin = min([box.xmin, new_xmin])
+                    new_xmax = max([box.xmax, new_xmax])
+                    new_ymin = min([box.ymin, new_ymin])
+                    new_ymax = max([box.ymax, new_ymax])
+                except NameError:
+                    new_xmin = box.xmin
+                    new_xmax = box.xmax
+                    new_ymin = box.ymin
+                    new_ymax = box.ymax
             else:
-                break
-
-        image_mask = cv2.imread(self.mask_path)
+                new_label_boxes.append(box)
+        self.label_boxes = new_label_boxes
 
         for label_to_merge in original_labels:
-            try:
-                label_color = self.label_masks[label_to_merge]
-                match = np.where((image_mask == label_color).all(axis=2))
-                image_mask[match] = merged_color
-                del self.label_masks[label_to_merge]
-            except KeyError:
-                pass
             self.delete_label_int(label_to_merge)
 
         self.add_label_int(new_label)
+        self.label_boxes.append(BoundingBox(new_label, new_xmin, new_xmax, new_ymin, new_ymax))
 
-        self.label_masks[new_label] = merged_color
-        self.save_mask_changes(image_mask)
-        self.save_label_changes()
+        self.save_changes()
 
-    def save_label_changes(self):
-        """Saves label changes to corresponding self LabeledImageMask
-
-        """
+    def save_changes(self):
         cwd = Path.cwd()
         data_dir = cwd / 'data'
-        labels_filepath = data_dir / str(self.image_id + "_labels.csv")
 
-        lines = ["label,R,G,B"]
-        for label, color in self.label_masks.items():
-            lines.append("{lab},{R},{G},{B}".format(
-                lab=label, R=color[2], G=color[1], B=color[0]))
-        to_write = "\n".join(lines)
-        with open(labels_filepath, "w") as labels_csv:
-            labels_csv.write(to_write)
+        annotation = ET.Element('annotation')
+        folder = ET.SubElement(annotation, 'folder')
+        filename = ET.SubElement(annotation, 'filename')
+        path = ET.SubElement(annotation, 'path')
+        source = ET.SubElement(annotation, 'source')
+        database = ET.SubElement(source, 'database')
+        size = ET.SubElement(annotation, 'size')
+        width = ET.SubElement(size, 'width')
+        height = ET.SubElement(size, 'height')
+        depth = ET.SubElement(size, 'depth')
+        segmented = ET.SubElement(annotation, 'segmented')
 
-    def save_mask_changes(self, changed_mask):
-        """Overwrites existing mask for corresponding LabeledImageMask with changed_mask
+        annotation.set('verified', 'yes')
+        folder.text = 'images'
+        filename.text = self.image_id + ".jpg"
+        path.text = self.image_id + ".jpg"
+        database.text = 'Unknown'
+        width.text = str(self.xdim)
+        height.text = str(self.ydim)
+        depth.text = '3'
+        segmented.text = '0'
 
-        Args:
-            changed_mask (cv2 image representation): modified mask to write out
-        """
-        cwd = Path.cwd()
-        data_dir = cwd / 'data'
-        mask_filepath = data_dir / str(self.image_id + "_mask.png")
+        for box in self.label_boxes:
+            object = ET.SubElement(annotation, 'object')
+            name = ET.SubElement(object, 'name')
+            pose = ET.SubElement(object, 'pose')
+            truncated = ET.SubElement(object, 'truncated')
+            difficult = ET.SubElement(object, 'difficult')
+            bndbox = ET.SubElement(object, 'bndbox')
+            xmin = ET.SubElement(bndbox, 'xmin')
+            ymin = ET.SubElement(bndbox, 'ymin')
+            xmax = ET.SubElement(bndbox, 'xmax')
+            ymax = ET.SubElement(bndbox, 'ymax')
+            name.text = box.label
+            pose.text = 'Unspecified'
+            truncated.text = '0'
+            difficult.text = '0'
+            xmin.text = str(box.xmin)
+            ymin.text = str(box.ymin)
+            xmax.text = str(box.xmax)
+            ymax.text = str(box.ymax)
 
-        cv2.imwrite(str(mask_filepath.absolute()), changed_mask)
+        xml_data = str(ET.tostring(annotation, encoding='unicode'))
+        
+        xml_file = open(data_dir / (self.image_id + "_labels.xml"), 'w')
+        xml_file.write(xml_data)
+        xml_file.close()
 
     def export_as_TFExample(self):
         """Converts LabeledImageMask object to tf_example
@@ -214,54 +297,40 @@ class LabeledImageMask(LabeledImage):
         with tf.gfile.GFile(str(path_to_image.absolute()), 'rb') as fid:
             encoded_jpg = fid.read()
 
-        image_width = self.xdim
+        image_width  = self.xdim
         image_height = self.ydim
 
         filename = path_to_image.name.encode('utf8')
         image_format = b'jpg'
-
-        masks = []
+        xmins = []
+        xmaxs = []
+        ymins = []
+        ymaxs = []
         classes_text = []
         classes = []
 
-        image_mask = cv2.imread(self.mask_path)
-        for class_label, color in self.label_masks.items():
-            matches = np.where(
-                (image_mask == color).all(axis=2), 1, 0.0).astype(np.uint8)
-            classes_text.append(class_label.encode('utf8'))
-            classes.append(self._label_to_int_dict[class_label])
-            masks.append(matches)
+        for bounding_box in self.label_boxes:
+            xmins.append(bounding_box.xmin / image_width)
+            xmaxs.append(bounding_box.xmax / image_width)
+            ymins.append(bounding_box.ymin / image_height)
+            ymaxs.append(bounding_box.ymax / image_height)
+            classes_text.append(bounding_box.label.encode('utf8'))
+            classes.append(bounding_box.label_int)
 
-        encoded_mask_png_list = []
-
-        for mask in masks:
-            img = PIL.Image.fromarray(mask)
-            output = io.BytesIO()
-            img.save(output, format='PNG')
-            encoded_mask_png_list.append(output.getvalue())
-
-        tf_example = tf.train.Example(
-            features=tf.train.Features(
-                feature={
-                    'image/height':
-                    dataset_util.int64_feature(image_height),
-                    'image/width':
-                    dataset_util.int64_feature(image_width),
-                    'image/filename':
-                    dataset_util.bytes_feature(filename),
-                    'image/source_id':
-                    dataset_util.bytes_feature(filename),
-                    'image/encoded':
-                    dataset_util.bytes_feature(encoded_jpg),
-                    'image/format':
-                    dataset_util.bytes_feature(image_format),
-                    'image/object/class/text':
-                    dataset_util.bytes_list_feature(classes_text),
-                    'image/object/class/label':
-                    dataset_util.int64_list_feature(classes),
-                    'image/object/mask':
-                    dataset_util.bytes_list_feature(encoded_mask_png_list),
-                }))
+        tf_example = tf.train.Example(features=tf.train.Features(feature={
+            'image/height': dataset_util.int64_feature(image_height),
+            'image/width': dataset_util.int64_feature(image_width),
+            'image/filename': dataset_util.bytes_feature(filename),
+            'image/source_id': dataset_util.bytes_feature(filename),
+            'image/encoded': dataset_util.bytes_feature(encoded_jpg),
+            'image/format': dataset_util.bytes_feature(image_format),
+            'image/object/bbox/xmin': dataset_util.float_list_feature(xmins),
+            'image/object/bbox/xmax': dataset_util.float_list_feature(xmaxs),
+            'image/object/bbox/ymin': dataset_util.float_list_feature(ymins),
+            'image/object/bbox/ymax': dataset_util.float_list_feature(ymaxs),
+            'image/object/class/text': dataset_util.bytes_list_feature(classes_text),
+            'image/object/class/label': dataset_util.int64_list_feature(classes),
+        }))
 
         return tf_example
 
@@ -508,7 +577,7 @@ class LabeledImageMask(LabeledImage):
         dataset_path = Path.cwd() / 'dataset' / dataset_name
         label_map_filepath = dataset_path / 'label_map.pbtxt'
         label_map = []
-        for label_name, label_int in cls._label_to_int_dict.items():
+        for label_name, label_int in cls.label_to_int_dict.items():
             label_info = "\n".join([
                 "item {", "  id: {id}".format(id=label_int),
                 "  name: '{name}'".format(name=label_name), "}"
@@ -516,3 +585,30 @@ class LabeledImageMask(LabeledImage):
             label_map.append(label_info)
         with open(label_map_filepath, 'w') as outfile:
             outfile.write("\n\n".join(label_map))
+
+
+class BoundingBox:
+    """Stores the label and bounding box dimensions for a detected image region
+    
+    Attributes:
+        label (str): the classification label for the region (e.g., "cygnus")
+        xmin (int): the pixel location of the left edge of the bounding box
+        xmax (int): the pixel location of the right edge of the bounding box
+        ymin (int): the pixel location of the top edge of the bounding box
+        ymax (int): the pixel location of the top edge of the bounding box
+    """
+
+    def __init__(self, label, xmin, xmax, ymin, ymax):
+        self.label = label
+        self.xmin = xmin
+        self.xmax = xmax
+        self.ymin = ymin
+        self.ymax = ymax
+
+    def __repr__(self):
+        return "label: {} | xmin: {} | xmax: {} | ymin: {} | ymax: {}".format(
+            self.label, self.xmin, self.xmax, self.ymin, self.ymax)
+    
+    @property
+    def label_int(self):
+        return BBoxLabeledImage.label_to_int_dict[self.label]
