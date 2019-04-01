@@ -117,6 +117,7 @@ class LabeledImageMask(LabeledImage):
         # if the new label already exists, treat this as a merge
         if new_label in self.label_masks.keys():
             self.merge_labels([original_label, new_label], new_label)
+            return
 
         # perform rename within the label_masks dict object attribute
         try:
