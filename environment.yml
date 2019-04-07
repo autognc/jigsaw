@@ -17,4 +17,4 @@ dependencies:
           - questionary==1.0.2
           - regex==2019.3.12
           - scikit-learn==0.20.2
-          - yaml==5.1
+          - pyyaml==5.1
