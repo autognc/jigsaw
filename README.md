@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.com/autognc/jigsaw.svg?branch=master)](https://travis-ci.com/autognc/jigsaw)
+
 # jigsaw
 Dataset Preparation/Engineering Tool
 
