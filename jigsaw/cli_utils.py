@@ -133,9 +133,7 @@ def user_confirms(message, default=False):
 
 
 def in_test_mode():
-    if "pytest" in sys.modules:
-        return True
-    return False
+    return "pytest" in sys.modules
 
 
 class Spinner:
