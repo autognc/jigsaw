@@ -97,7 +97,7 @@ class BBoxLabeledImage(LabeledImage):
     def segment_by_instance(cls, mask):
         instances = []
         blurred = cv2.GaussianBlur(mask, (5, 5), 0)
-        contours, _ = cv2.findContours(blurred.copy(), cv2.RETR_EXTERNAL,
+        img, contours, _ = cv2.findContours(blurred.copy(), cv2.RETR_EXTERNAL,
                                         cv2.CHAIN_APPROX_SIMPLE)
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
