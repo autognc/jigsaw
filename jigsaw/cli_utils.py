@@ -133,10 +133,7 @@ def user_confirms(message, default=False):
 
 
 def in_test_mode():
-    try:
-        return os.environ["TEST_MODE"]
-    except KeyError:
-        return False
+    return "pytest" in sys.modules
 
 
 class Spinner:
