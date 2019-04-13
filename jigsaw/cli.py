@@ -126,7 +126,7 @@ if user_confirms(message="Would you like to upload the dataset to S3?"):
     bucket = user_input(
         message="Which bucket would you like to upload to?",
         default=default)
-    spinner = Halo(text="Uploading dataset to S3...", text_color="magenta")
+    spinner = Spinner(text="Uploading dataset to S3...", text_color="magenta")
     spinner.start()
     upload_dataset(
         bucket_name=bucket, directory=Path.cwd() / 'dataset' / dataset_name)
