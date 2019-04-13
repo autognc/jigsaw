@@ -64,9 +64,14 @@ if data_origin == "Local":
         data_source=data_origin, data_filepath=data_path)
 
 elif data_origin == "S3":
+    default = ""
+    try:
+        default = os.environ['LABELED_BUCKET_NAME']
+    except KeyError:
+        pass
     bucket = user_input(
         message="Which bucket would you like to download from?",
-        default=os.environ["LABELED_BUCKET_NAME"])
+        default=default)
     image_ids, filter_metadata = model.filter_and_load(
         data_source=data_origin, bucket=bucket)
 
@@ -113,9 +118,14 @@ except NotImplementedError:
 spinner.succeed(text=spinner.text + "Complete.")
 
 if user_confirms(message="Would you like to upload the dataset to S3?"):
+    default = ""
+    try:
+        default = os.environ['DATASETS_BUCKET_NAME']
+    except KeyError:
+        pass
     bucket = user_input(
         message="Which bucket would you like to upload to?",
-        default=os.environ["DATASETS_BUCKET_NAME"])
+        default=default)
     spinner = Halo(text="Uploading dataset to S3...", text_color="magenta")
     spinner.start()
     upload_dataset(
