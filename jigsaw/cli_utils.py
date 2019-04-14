@@ -133,7 +133,8 @@ def user_confirms(message, default=False):
 
 
 def in_test_mode():
-    return "pytest" in sys.modules
+    # return "pytest" in sys.modules
+    return hasattr(sys, "_called_from_test")
 
 
 class Spinner:
