@@ -4,6 +4,7 @@ from __future__ import print_function, unicode_literals
 import os
 import random
 import shutil
+import time
 import numpy as np
 random.seed(42)
 np.random.seed(42)
@@ -118,10 +119,20 @@ if user_confirms(message="Would you like to upload the dataset to S3?"):
     default = ""
     default = os.getenv('DATASETS_BUCKET_NAME', default)
     bucket = user_input(
-        message="Which bucket would you like to upload to?",
-        default=default)
+        message="Which bucket would you like to upload to?", default=default)
     spinner = Spinner(text="Uploading dataset to S3...", text_color="magenta")
     spinner.start()
     upload_dataset(
         bucket_name=bucket, directory=Path.cwd() / 'dataset' / dataset_name)
+    spinner.succeed(text=spinner.text + "Complete.")
+
+if (dataset_name != '') and user_confirms(
+        message="Would you like to delete your " + dataset_name + " dataset?"):
+    dataset_path = Path.cwd() / 'dataset' / dataset_name
+
+    spinner = Spinner(
+        text="Deleting " + dataset_name + " dataset...", text_color="magenta")
+    spinner.start()
+    time.sleep(3)
+    shutil.rmtree(dataset_path)
     spinner.succeed(text=spinner.text + "Complete.")
