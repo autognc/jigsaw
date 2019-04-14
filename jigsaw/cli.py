@@ -66,10 +66,7 @@ if data_origin == "Local":
 
 elif data_origin == "S3":
     default = ""
-    try:
-        default = os.environ['LABELED_BUCKET_NAME']
-    except KeyError:
-        pass
+    default = os.getenv('LABELED_BUCKET_NAME', default)
     bucket = user_input(
         message="Which bucket would you like to download from?",
         default=default)
@@ -120,10 +117,7 @@ spinner.succeed(text=spinner.text + "Complete.")
 
 if user_confirms(message="Would you like to upload the dataset to S3?"):
     default = ""
-    try:
-        default = os.environ['DATASETS_BUCKET_NAME']
-    except KeyError:
-        pass
+    default = os.getenv('DATASETS_BUCKET_NAME', default)
     bucket = user_input(
         message="Which bucket would you like to upload to?", default=default)
     spinner = Spinner(text="Uploading dataset to S3...", text_color="magenta")
