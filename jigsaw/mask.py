@@ -79,7 +79,7 @@ class LabeledImageMask:
         mask_filepath = masks_dir / str(image_id + "_mask.png")
         mask_filepath = str(mask_filepath.absolute()) # cv2.imread doesn't like Path objects.
         labels_filepath = labels_dir / str(image_id + "_labels.csv")
-        image_filepath = images_dir / str(image_id + ".jpg")
+        image_filepath = images_dir / str(image_id + ".png")
 
         labels_df = pd.read_csv(labels_filepath, index_col="label")
         image_mask = cv2.imread(mask_filepath)
@@ -200,13 +200,13 @@ class LabeledImageMask:
         path_to_image = Path(self.image_path)
 
         with tf.gfile.GFile(str(path_to_image.absolute()), 'rb') as fid:
-            encoded_jpg = fid.read()
+            encoded_png = fid.read()
 
         image_width  = self.xdim
         image_height = self.ydim
 
         filename = path_to_image.name.encode('utf8')
-        image_format = b'jpg'
+        image_format = b'png'
 
         masks = []
         classes_text = []
@@ -232,7 +232,7 @@ class LabeledImageMask:
             'image/width': dataset_util.int64_feature(image_width),
             'image/filename': dataset_util.bytes_feature(filename),
             'image/source_id': dataset_util.bytes_feature(filename),
-            'image/encoded': dataset_util.bytes_feature(encoded_jpg),
+            'image/encoded': dataset_util.bytes_feature(encoded_png),
             'image/format': dataset_util.bytes_feature(image_format),
             'image/object/class/text': dataset_util.bytes_list_feature(classes_text),
             'image/object/class/label': dataset_util.int64_list_feature(classes),
