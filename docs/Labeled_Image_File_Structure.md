@@ -3,10 +3,10 @@
 Images in an S3 bucket should be organized in the following way:
 ```
 <prefix>                    # useful prefix that describes the images it contains
-    <image name>.png            # image itself
-    <image name>_labels.csv     # semantic labels
-    <image name>_mask.png       # semantic mask
-    <image name>_meta.json      # metadata
+    image_<image name>.png      # image itself
+    labels_<image_name>.csv     # semantic labels
+    mask_<image name>.png       # semantic mask
+    meta_<image name>.json      # metadata
     ... for all images
 ... for all prefixes
 ```
