@@ -19,9 +19,10 @@ from jigsaw.cli_utils import (list_to_choices, FilenameValidator,
                               set_proper_cwd, Spinner)
 from jigsaw.data_interface import load_models
 from jigsaw.filtering import load_metadata, and_filter, or_filter, join_sets
-from jigsaw.io_utils import (
-    download_image_data_from_s3, download_json_metadata_from_s3,
-    load_BBoxLabeledImages, load_LabeledImageMasks, upload_dataset)
+from jigsaw.io_utils import (download_image_data_from_s3,
+                             download_json_metadata_from_s3,
+                             load_BBoxLabeledImages, load_LabeledImageMasks,
+                             upload_dataset, get_bucket_folders)
 from jigsaw.transforms import load_labels, Transform, perform_transforms
 from jigsaw.write_dataset import write_dataset, write_metadata, write_label_map
 from jigsaw.models.mask.model import LabeledImageMask
@@ -70,8 +71,25 @@ elif data_origin == "S3":
     bucket = user_input(
         message="Which bucket would you like to download from?",
         default=default)
+
+    filter_val = ''
+    user_folder_selection = ''
+
+    while not user_folder_selection.startswith("I'm done, use prefix: "):
+        user_folder_selection = user_selection(
+            message="Would folder would you like to download from?",
+            choices=[
+                "I'm done, use prefix: " +
+                (filter_val if filter_val != '' else "(None)")
+            ] + sorted(get_bucket_folders(default, filter_val)),
+            selection_type="list",
+            sort_choices=False)
+
+        if not user_folder_selection.startswith("I'm done, use prefix: "):
+            filter_val = user_folder_selection
+
     image_ids, filter_metadata = model.filter_and_load(
-        data_source=data_origin, bucket=bucket)
+        data_source=data_origin, bucket=bucket, filter_val=filter_val)
 
 try:
     transform_metadata = model.transform(image_ids)
