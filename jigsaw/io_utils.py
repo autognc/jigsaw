@@ -101,6 +101,7 @@ def copy_data_locally(source_dir,
 
 
 def download_data_from_s3(bucket_name,
+                          filter_val='',
                           condition_func=lambda filename: True,
                           num_threads=20):
     """Downloads data from S3 into Jigsaw given some condition
@@ -121,7 +122,7 @@ def download_data_from_s3(bucket_name,
             obj = queue.get()
             if obj is None:
                 break
-            obj.Object().download_file(obj.key)
+            obj.Object().download_file(obj.key.split("/")[-1])
             # TODO: test for files with prefixes here
             queue.task_done()
 
@@ -147,7 +148,7 @@ def download_data_from_s3(bucket_name,
     # satisfy the condition_func
     s3 = boto3.resource("s3")
     bucket = s3.Bucket(bucket_name)
-    for obj in bucket.objects.all():
+    for obj in bucket.objects.filter(Prefix=filter_val):
         filename = obj.key.split("/")[-1]
         if condition_func(filename) and not (data_dir / filename).exists():
             download_queue.put(obj)
@@ -366,7 +367,7 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
     os.chdir(cwd)
 
 
-def get_s3_filepath(image_id, prefix="", filetype="jpg"):
+def get_s3_filepath(image_id, prefix="", filetype="png"):
     """Constructs the S3 filepath for a given image ID
     
     Args:
@@ -374,7 +375,7 @@ def get_s3_filepath(image_id, prefix="", filetype="jpg"):
             data
         prefix (str, optional): Defaults to "labeled". The S3 prefix to the
             filename
-        filetype (str, optional): Defaults to "jpg". The filetype (suffix)
+        filetype (str, optional): Defaults to "png". The filetype (suffix)
     
     Returns:
         str: the S3 url of the image
@@ -541,3 +542,14 @@ def upload_dataset(bucket_name, directory, num_threads=20):
         upload_queue.put(None)
     for worker in workers:
         worker.join()
+
+
+def get_bucket_folders(bucket_name, prefix):
+    client = boto3.client('s3')
+    result = client.list_objects(
+        Bucket=bucket_name, Prefix=prefix, Delimiter='/')
+    folders = []
+    for o in result.get('CommonPrefixes', []):
+        folders.append(o.get('Prefix'))
+
+    return folders

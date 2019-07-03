@@ -29,7 +29,7 @@ def load_metadata():
         image_id = dir_entry.name.rstrip("_meta.json")
         with open(dir_entry.name, "r") as read_file:
             data = json.load(read_file)
-        tag_list = data["tags"]
+        tag_list = data.get("tags", [])
         temp = pd.DataFrame(
             dict(zip(tag_list, [True] * len(tag_list))), index=[image_id])
         tags_df = pd.concat((tags_df, temp), sort=False)

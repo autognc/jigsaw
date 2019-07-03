@@ -212,7 +212,7 @@ class LabeledImageMask:
         path_to_image = Path(self.image_path)
 
         with tf.gfile.GFile(str(path_to_image.absolute()), 'rb') as fid:
-            encoded_jpg = fid.read()
+            encoded_png = fid.read()
 
         image_width  = self.xdim
         image_height = self.ydim
@@ -244,7 +244,7 @@ class LabeledImageMask:
             'image/width': dataset_util.int64_feature(image_width),
             'image/filename': dataset_util.bytes_feature(filename),
             'image/source_id': dataset_util.bytes_feature(filename),
-            'image/encoded': dataset_util.bytes_feature(encoded_jpg),
+            'image/encoded': dataset_util.bytes_feature(encoded_png),
             'image/format': dataset_util.bytes_feature(image_format),
             'image/object/class/text': dataset_util.bytes_list_feature(classes_text),
             'image/object/class/label': dataset_util.int64_list_feature(classes),
