@@ -35,7 +35,9 @@ class BBoxLabeledImage(LabeledImage):
     label_to_int_dict = {}
 
     associated_files = {
-        "image": ".jpg",
+        "image_type_1": ".png",
+        "image_type_2": ".jpg",
+        "image_type_3": ".jpeg",
         "metadata": "_meta.json",
         "mask": "_mask.png",
         "labels": "_labels.csv",
@@ -44,9 +46,10 @@ class BBoxLabeledImage(LabeledImage):
 
     training_type = "Bounding Box"
     
-    def __init__(self, image_id, image_path, label_boxes, xdim, ydim):
+    def __init__(self, image_id, image_path, image_type, label_boxes, xdim, ydim):
         self.image_id = image_id
         self.image_path = image_path
+        self.image_type = image_type
         self.label_boxes = label_boxes
         self.xdim = xdim
         self.ydim = ydim
@@ -73,7 +76,7 @@ class BBoxLabeledImage(LabeledImage):
             cls.renumber_label_to_int_dict()
 
     @classmethod
-    def from_PASCAL_VOC(cls, image_id, image_filepath, labels_filepath):
+    def from_PASCAL_VOC(cls, image_id, image_filepath, image_type, labels_filepath):
         label_boxes = []
         tree = ET.parse(str(labels_filepath.absolute()))
         root = tree.getroot()
@@ -90,7 +93,7 @@ class BBoxLabeledImage(LabeledImage):
             cls.add_label_int(label)
             box = BoundingBox(label, xmin, xmax, ymin, ymax)
             label_boxes.append(box)
-        return BBoxLabeledImage(image_id, image_filepath, label_boxes, xdim, ydim)
+        return BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
 
 
     @classmethod
@@ -105,7 +108,7 @@ class BBoxLabeledImage(LabeledImage):
         return instances
 
     @classmethod
-    def from_semantic_labels(cls, image_id, image_filepath, mask_filepath, labels_filepath, skip_background):
+    def from_semantic_labels(cls, image_id, image_filepath, image_type, mask_filepath, labels_filepath, skip_background):
         mask_filepath = str(
             mask_filepath.absolute())  # cv2.imread doesn't like Path objects.
 
@@ -138,7 +141,7 @@ class BBoxLabeledImage(LabeledImage):
                     instance["xmin"], instance["xmax"], instance["ymin"], instance["ymax"])
                 label_boxes.append(box)
 
-        bbox = BBoxLabeledImage(image_id, image_filepath, label_boxes, xdim, ydim)
+        bbox = BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
         os.remove(mask_filepath)
         os.remove(labels_filepath)
         bbox.save_changes()
@@ -162,16 +165,27 @@ class BBoxLabeledImage(LabeledImage):
 
         cwd = Path.cwd()
         data_dir = cwd / 'data'
-        image_filepath = data_dir / str(image_id + ".jpg")
+
+        image_filepath = None
+        image_type = None
+        file_extensions = [".png", ".jpg", ".jpeg"]
+        for extension in file_extensions:
+            if os.path.exists(data_dir / str(image_id + extension)):
+                image_filepath = data_dir / str(image_id + extension)
+                image_type = extension
+                break
+
+        if image_filepath is None:
+            raise ValueError("Hmm, there doesn't seem to be a valid image filepath.")
 
         labels_xml_path = data_dir / (str(image_id) + "_labels.xml")
         if labels_xml_path.exists():
-            return cls.from_PASCAL_VOC(image_id, image_filepath, labels_xml_path)
+            return cls.from_PASCAL_VOC(image_id, image_filepath, image_type, labels_xml_path)
         else:
             mask_filepath = data_dir / str(image_id + "_mask.png")
             labels_filepath = data_dir / str(image_id + "_labels.csv")
             
-            return cls.from_semantic_labels(image_id, image_filepath, mask_filepath, labels_filepath, skip_background)
+            return cls.from_semantic_labels(image_id, image_filepath, image_type, mask_filepath, labels_filepath, skip_background)
 
     def rename_label(self, original_label, new_label):
         """Renames a given label
@@ -252,8 +266,8 @@ class BBoxLabeledImage(LabeledImage):
 
         annotation.set('verified', 'yes')
         folder.text = 'images'
-        filename.text = self.image_id + ".jpg"
-        path.text = self.image_id + ".jpg"
+        filename.text = self.image_id + self.image_type
+        path.text = self.image_id + self.image_type
         database.text = 'Unknown'
         width.text = str(self.xdim)
         height.text = str(self.ydim)
@@ -301,7 +315,7 @@ class BBoxLabeledImage(LabeledImage):
         image_height = self.ydim
 
         filename = path_to_image.name.encode('utf8')
-        image_format = b'jpg'
+        image_format = bytes(self.image_type, encoding='utf-8')
         xmins = []
         xmaxs = []
         ymins = []

@@ -6,7 +6,7 @@ from pathlib import Path
 import tensorflow as tf
 from object_detection.utils import dataset_util
 import PIL
-import io
+import io, os
 
 
 class LabeledImageMask:
@@ -29,7 +29,7 @@ class LabeledImageMask:
     label_to_int_dict = {}
 
     def __init__(self, image_id, image_path, mask_path, label_masks, xdim,
-                 ydim):
+                 ydim, image_type):
         self.image_id = image_id
         self.image_path = image_path
         self.mask_path = mask_path
@@ -38,6 +38,7 @@ class LabeledImageMask:
             self.add_label_int(label)
         self.xdim = xdim
         self.ydim = ydim
+        self.image_type = image_type
 
     def renumber_label_to_int_dict(self):
         for i, label in enumerate(LabeledImageMask.label_to_int_dict.keys()):
@@ -79,7 +80,18 @@ class LabeledImageMask:
         mask_filepath = masks_dir / str(image_id + "_mask.png")
         mask_filepath = str(mask_filepath.absolute()) # cv2.imread doesn't like Path objects.
         labels_filepath = labels_dir / str(image_id + "_labels.csv")
-        image_filepath = images_dir / str(image_id + ".jpg")
+
+        image_filepath = None
+        image_type = None
+        file_extensions = [".png", ".jpg", ".jpeg"]
+        for extension in file_extensions:
+            if os.path.exists(images_dir / str(image_id + extension)):
+                image_filepath = images_dir / str(image_id + extension)
+                image_type = extension
+                break
+
+        if image_filepath is None:
+            raise ValueError("Hmm, there doesn't seem to be a valid image filepath.")
 
         labels_df = pd.read_csv(labels_filepath, index_col="label")
         image_mask = cv2.imread(mask_filepath)
@@ -92,7 +104,7 @@ class LabeledImageMask:
             color_bgr = np.array([color["B"], color["G"], color["R"]])
             label_masks[label] = color_bgr
         return LabeledImageMask(image_id, image_filepath, mask_filepath,
-                                label_masks, xdim, ydim)
+                                label_masks, xdim, ydim, image_type)
 
     def rename_label(self, original_label, new_label):
         """Renames a given label
@@ -206,7 +218,7 @@ class LabeledImageMask:
         image_height = self.ydim
 
         filename = path_to_image.name.encode('utf8')
-        image_format = b'jpg'
+        image_format = bytes(self.image_type, encoding='utf-8')
 
         masks = []
         classes_text = []

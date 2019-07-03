@@ -349,10 +349,12 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
     s3 = boto3.resource("s3")
     bucket = s3.Bucket(os.environ["LABELED_BUCKET_NAME"])
     for obj in bucket.objects.filter(Prefix=prefix):
-        if obj.key.endswith(".jpg"):
-            image_id = obj.key.lstrip(prefix).rstrip(".jpg")
-            if image_id in image_ids:
-                download_queue.put(obj)
+        file_extensions = [".png", ".jpg", ".jpeg"]
+        for extension in file_extensions:
+            if obj.key.endswith(extension):
+                image_id = obj.key.lstrip(prefix).rstrip(extension)
+                if image_id in image_ids:
+                    download_queue.put(obj)
 
     # wait for the queue to be empty, then join all threads
     download_queue.join()
