@@ -21,7 +21,7 @@ def ingest_metadata(data_source, **kwargs):
     elif data_source == "S3":
         download_data_from_s3(
             bucket_name=kwargs["bucket"],
-            filter_val=kwargs["filter_val"],
+            filter_vals=kwargs["filter_vals"],
             condition_func=only_json_func)
 
     spinner.succeed(text=spinner.text + "Complete.")
