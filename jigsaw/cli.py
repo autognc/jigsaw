@@ -75,21 +75,16 @@ elif data_origin == "S3":
     filter_val = ''
     user_folder_selection = ''
 
-    while not user_folder_selection.startswith("I'm done, use prefix: "):
-        user_folder_selection = user_selection(
-            message="Would folder would you like to download from?",
-            choices=[
-                "I'm done, use prefix: " +
-                (filter_val if filter_val != '' else "(None)")
-            ] + sorted(get_bucket_folders(default, filter_val)),
-            selection_type="list",
-            sort_choices=False)
-
-        if not user_folder_selection.startswith("I'm done, use prefix: "):
-            filter_val = user_folder_selection
-
+    # prompt user for desired prefixes
+    user_folder_selection = user_selection(
+        message="Would folder would you like to download from?",
+        choices=get_bucket_folders(bucket, filter_val),
+        selection_type="checkbox",
+        sort_choices=True)
+        
+    # go through filtering process defined by model
     image_ids, filter_metadata = model.filter_and_load(
-        data_source=data_origin, bucket=bucket, filter_val=filter_val)
+        data_source=data_origin, bucket=bucket, filter_vals=user_folder_selection)
 
 try:
     transform_metadata = model.transform(image_ids)

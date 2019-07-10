@@ -101,7 +101,7 @@ def copy_data_locally(source_dir,
 
 
 def download_data_from_s3(bucket_name,
-                          filter_val='',
+                          filter_vals=[''],
                           condition_func=lambda filename: True,
                           num_threads=20):
     """Downloads data from S3 into Jigsaw given some condition
@@ -148,10 +148,11 @@ def download_data_from_s3(bucket_name,
     # satisfy the condition_func
     s3 = boto3.resource("s3")
     bucket = s3.Bucket(bucket_name)
-    for obj in bucket.objects.filter(Prefix=filter_val):
-        filename = obj.key.split("/")[-1]
-        if condition_func(filename) and not (data_dir / filename).exists():
-            download_queue.put(obj)
+    for prefix in filter_vals:
+        for obj in bucket.objects.filter(Prefix=prefix):
+            filename = obj.key.split("/")[-1]
+            if condition_func(filename) and not (data_dir / filename).exists():
+                download_queue.put(obj)
 
     # wait for the queue to be empty, then join all threads
     download_queue.join()

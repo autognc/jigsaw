@@ -7,6 +7,7 @@ import tensorflow as tf
 import PIL
 import io
 import os
+import sys
 import xml.etree.ElementTree as ET
 
 from colorama import init, Fore
@@ -360,7 +361,7 @@ class BBoxLabeledImage(LabeledImage):
         # if yes, enter a loop that supplies filter options
         # if no, skip
         if user_confirms(
-                message="Would you like to filter out any of the data?",
+                message="Would you like to filter out any of the data ({} images total)?".format(len(tags_df)),
                 default=False):
             sets = {}
             # outer loop to determine how many sets the user will create
@@ -457,8 +458,9 @@ class BBoxLabeledImage(LabeledImage):
                 image_ids = join_sets(sets_to_join).index.tolist()
 
             except:
-                image_ids = tags_df.index.tolist()
-                print("Sorry, there were no tags on the data to filter by. Using all images.")
+                # image_ids = tags_df.index.tolist()
+                print("Sorry, there were no tags on the data to filter by or the user killed the program. Exiting...")
+                sys.exit(1)
         else:
             image_ids = tags_df.index.tolist()
 
