@@ -68,13 +68,13 @@ class BBoxLabeledImage:
         path_to_image = Path(self.image_path)
 
         with tf.gfile.GFile(str(path_to_image.absolute()), 'rb') as fid:
-            encoded_jpg = fid.read()
+            encoded_png = fid.read()
 
         image_width  = self.xdim
         image_height = self.ydim
 
         filename = path_to_image.name.encode('utf8')
-        image_format = b'jpg'
+        image_format = b'png'
         xmins = []
         xmaxs = []
         ymins = []
@@ -95,7 +95,7 @@ class BBoxLabeledImage:
             'image/width': dataset_util.int64_feature(image_width),
             'image/filename': dataset_util.bytes_feature(filename),
             'image/source_id': dataset_util.bytes_feature(filename),
-            'image/encoded': dataset_util.bytes_feature(encoded_jpg),
+            'image/encoded': dataset_util.bytes_feature(encoded_png),
             'image/format': dataset_util.bytes_feature(image_format),
             'image/object/bbox/xmin': dataset_util.float_list_feature(xmins),
             'image/object/bbox/xmax': dataset_util.float_list_feature(xmaxs),

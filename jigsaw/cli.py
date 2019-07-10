@@ -4,6 +4,7 @@ from __future__ import print_function, unicode_literals
 import os
 import random
 import shutil
+import time
 import numpy as np
 random.seed(42)
 np.random.seed(42)
@@ -18,9 +19,10 @@ from jigsaw.cli_utils import (list_to_choices, FilenameValidator,
                               set_proper_cwd, Spinner)
 from jigsaw.data_interface import load_models
 from jigsaw.filtering import load_metadata, and_filter, or_filter, join_sets
-from jigsaw.io_utils import (
-    download_image_data_from_s3, download_json_metadata_from_s3,
-    load_BBoxLabeledImages, load_LabeledImageMasks, upload_dataset)
+from jigsaw.io_utils import (download_image_data_from_s3,
+                             download_json_metadata_from_s3,
+                             load_BBoxLabeledImages, load_LabeledImageMasks,
+                             upload_dataset, get_bucket_folders)
 from jigsaw.transforms import load_labels, Transform, perform_transforms
 from jigsaw.write_dataset import write_dataset, write_metadata, write_label_map
 from jigsaw.models.mask.model import LabeledImageMask
@@ -64,11 +66,25 @@ if data_origin == "Local":
         data_source=data_origin, data_filepath=data_path)
 
 elif data_origin == "S3":
+    default = ""
+    default = os.getenv('LABELED_BUCKET_NAME', default)
     bucket = user_input(
         message="Which bucket would you like to download from?",
-        default=os.environ["LABELED_BUCKET_NAME"])
+        default=default)
+
+    filter_val = ''
+    user_folder_selection = ''
+
+    # prompt user for desired prefixes
+    user_folder_selection = user_selection(
+        message="Would folder would you like to download from?",
+        choices=get_bucket_folders(bucket, filter_val),
+        selection_type="checkbox",
+        sort_choices=True)
+        
+    # go through filtering process defined by model
     image_ids, filter_metadata = model.filter_and_load(
-        data_source=data_origin, bucket=bucket)
+        data_source=data_origin, bucket=bucket, filter_vals=user_folder_selection)
 
 try:
     transform_metadata = model.transform(image_ids)
@@ -113,11 +129,23 @@ except NotImplementedError:
 spinner.succeed(text=spinner.text + "Complete.")
 
 if user_confirms(message="Would you like to upload the dataset to S3?"):
+    default = ""
+    default = os.getenv('DATASETS_BUCKET_NAME', default)
     bucket = user_input(
-        message="Which bucket would you like to upload to?",
-        default=os.environ["DATASETS_BUCKET_NAME"])
-    spinner = Halo(text="Uploading dataset to S3...", text_color="magenta")
+        message="Which bucket would you like to upload to?", default=default)
+    spinner = Spinner(text="Uploading dataset to S3...", text_color="magenta")
     spinner.start()
     upload_dataset(
         bucket_name=bucket, directory=Path.cwd() / 'dataset' / dataset_name)
+    spinner.succeed(text=spinner.text + "Complete.")
+
+if (dataset_name != '') and user_confirms(
+        message="Would you like to delete your " + dataset_name + " dataset?"):
+    dataset_path = Path.cwd() / 'dataset' / dataset_name
+
+    spinner = Spinner(
+        text="Deleting " + dataset_name + " dataset...", text_color="magenta")
+    spinner.start()
+    time.sleep(3)
+    shutil.rmtree(dataset_path)
     spinner.succeed(text=spinner.text + "Complete.")

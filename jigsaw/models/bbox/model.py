@@ -7,6 +7,7 @@ import tensorflow as tf
 import PIL
 import io
 import os
+import sys
 import xml.etree.ElementTree as ET
 
 from colorama import init, Fore
@@ -35,7 +36,9 @@ class BBoxLabeledImage(LabeledImage):
     label_to_int_dict = {}
 
     associated_files = {
-        "image": ".jpg",
+        "image_type_1": ".png",
+        "image_type_2": ".jpg",
+        "image_type_3": ".jpeg",
         "metadata": "_meta.json",
         "mask": "_mask.png",
         "labels": "_labels.csv",
@@ -44,9 +47,10 @@ class BBoxLabeledImage(LabeledImage):
 
     training_type = "Bounding Box"
     
-    def __init__(self, image_id, image_path, label_boxes, xdim, ydim):
+    def __init__(self, image_id, image_path, image_type, label_boxes, xdim, ydim):
         self.image_id = image_id
         self.image_path = image_path
+        self.image_type = image_type
         self.label_boxes = label_boxes
         self.xdim = xdim
         self.ydim = ydim
@@ -73,7 +77,7 @@ class BBoxLabeledImage(LabeledImage):
             cls.renumber_label_to_int_dict()
 
     @classmethod
-    def from_PASCAL_VOC(cls, image_id, image_filepath, labels_filepath):
+    def from_PASCAL_VOC(cls, image_id, image_filepath, image_type, labels_filepath):
         label_boxes = []
         tree = ET.parse(str(labels_filepath.absolute()))
         root = tree.getroot()
@@ -90,7 +94,7 @@ class BBoxLabeledImage(LabeledImage):
             cls.add_label_int(label)
             box = BoundingBox(label, xmin, xmax, ymin, ymax)
             label_boxes.append(box)
-        return BBoxLabeledImage(image_id, image_filepath, label_boxes, xdim, ydim)
+        return BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
 
 
     @classmethod
@@ -105,7 +109,7 @@ class BBoxLabeledImage(LabeledImage):
         return instances
 
     @classmethod
-    def from_semantic_labels(cls, image_id, image_filepath, mask_filepath, labels_filepath, skip_background):
+    def from_semantic_labels(cls, image_id, image_filepath, image_type, mask_filepath, labels_filepath, skip_background):
         mask_filepath = str(
             mask_filepath.absolute())  # cv2.imread doesn't like Path objects.
 
@@ -138,7 +142,7 @@ class BBoxLabeledImage(LabeledImage):
                     instance["xmin"], instance["xmax"], instance["ymin"], instance["ymax"])
                 label_boxes.append(box)
 
-        bbox = BBoxLabeledImage(image_id, image_filepath, label_boxes, xdim, ydim)
+        bbox = BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
         os.remove(mask_filepath)
         os.remove(labels_filepath)
         bbox.save_changes()
@@ -162,16 +166,27 @@ class BBoxLabeledImage(LabeledImage):
 
         cwd = Path.cwd()
         data_dir = cwd / 'data'
-        image_filepath = data_dir / str(image_id + ".jpg")
+
+        image_filepath = None
+        image_type = None
+        file_extensions = [".png", ".jpg", ".jpeg"]
+        for extension in file_extensions:
+            if os.path.exists(data_dir / str(image_id + extension)):
+                image_filepath = data_dir / str(image_id + extension)
+                image_type = extension
+                break
+
+        if image_filepath is None:
+            raise ValueError("Hmm, there doesn't seem to be a valid image filepath.")
 
         labels_xml_path = data_dir / (str(image_id) + "_labels.xml")
         if labels_xml_path.exists():
-            return cls.from_PASCAL_VOC(image_id, image_filepath, labels_xml_path)
+            return cls.from_PASCAL_VOC(image_id, image_filepath, image_type, labels_xml_path)
         else:
             mask_filepath = data_dir / str(image_id + "_mask.png")
             labels_filepath = data_dir / str(image_id + "_labels.csv")
             
-            return cls.from_semantic_labels(image_id, image_filepath, mask_filepath, labels_filepath, skip_background)
+            return cls.from_semantic_labels(image_id, image_filepath, image_type, mask_filepath, labels_filepath, skip_background)
 
     def rename_label(self, original_label, new_label):
         """Renames a given label
@@ -252,8 +267,8 @@ class BBoxLabeledImage(LabeledImage):
 
         annotation.set('verified', 'yes')
         folder.text = 'images'
-        filename.text = self.image_id + ".jpg"
-        path.text = self.image_id + ".jpg"
+        filename.text = self.image_id + self.image_type
+        path.text = self.image_id + self.image_type
         database.text = 'Unknown'
         width.text = str(self.xdim)
         height.text = str(self.ydim)
@@ -295,13 +310,13 @@ class BBoxLabeledImage(LabeledImage):
         path_to_image = Path(self.image_path)
 
         with tf.gfile.GFile(str(path_to_image.absolute()), 'rb') as fid:
-            encoded_jpg = fid.read()
+            encoded_png = fid.read()
 
         image_width  = self.xdim
         image_height = self.ydim
 
         filename = path_to_image.name.encode('utf8')
-        image_format = b'jpg'
+        image_format = bytes(self.image_type, encoding='utf-8')
         xmins = []
         xmaxs = []
         ymins = []
@@ -322,7 +337,7 @@ class BBoxLabeledImage(LabeledImage):
             'image/width': dataset_util.int64_feature(image_width),
             'image/filename': dataset_util.bytes_feature(filename),
             'image/source_id': dataset_util.bytes_feature(filename),
-            'image/encoded': dataset_util.bytes_feature(encoded_jpg),
+            'image/encoded': dataset_util.bytes_feature(encoded_png),
             'image/format': dataset_util.bytes_feature(image_format),
             'image/object/bbox/xmin': dataset_util.float_list_feature(xmins),
             'image/object/bbox/xmax': dataset_util.float_list_feature(xmaxs),
@@ -340,105 +355,112 @@ class BBoxLabeledImage(LabeledImage):
 
         tags_df = load_metadata()
         filter_metadata = {"groups": []}
-        
+        image_ids = []
+
         # ask the user if they would like to perform filtering
         # if yes, enter a loop that supplies filter options
         # if no, skip
         if user_confirms(
-                message="Would you like to filter out any of the data?",
+                message="Would you like to filter out any of the data ({} images total)?".format(len(tags_df)),
                 default=False):
             sets = {}
             # outer loop to determine how many sets the user will create
-            while True:
-                subset = tags_df
-                this_group_filters = []
-                len_subsets = [len(subset)]
-                # inner loop to handle filtering for ONE set
+
+            try:
                 while True:
+                    subset = tags_df
+                    this_group_filters = []
+                    len_subsets = [len(subset)]
+                    # inner loop to handle filtering for ONE set
+                    while True:
 
-                    # if filters have been applied, display them to the user
-                    # to help guide their next choice
-                    if len(this_group_filters) > 0:
-                        filters_applied = [
-                            "   > " + (" " + f["type"] + " ").join(f["tags"]) +
-                            " ({} -> {})".format(len_subsets[i],
-                                                 len_subsets[i + 1])
-                            for i, f in enumerate(this_group_filters)
-                        ]
-                        print(Fore.MAGENTA + "ℹ Filters already applied:\n{}".
-                              format("\n".join(filters_applied)))
+                        # if filters have been applied, display them to the user
+                        # to help guide their next choice
+                        if len(this_group_filters) > 0:
+                            filters_applied = [
+                                "   > " + (" " + f["type"] + " ").join(f["tags"]) +
+                                " ({} -> {})".format(len_subsets[i],
+                                                    len_subsets[i + 1])
+                                for i, f in enumerate(this_group_filters)
+                            ]
+                            print(Fore.MAGENTA + "ℹ Filters already applied:\n{}".
+                                format("\n".join(filters_applied)))
 
-                    selected_tags = user_selection(
-                        message=
-                        "Please select a set of tags with which to apply a filter:",
-                        choices=list(tags_df),
-                        selection_type="checkbox")
-                    filter_type = user_selection(
-                        message=
-                        "Which filter would you like to apply to the above set?",
-                        choices=["AND (intersection)", "OR (union)"],
-                        selection_type="list")
+                        selected_tags = user_selection(
+                            message=
+                            "Please select a set of tags with which to apply a filter:",
+                            choices=list(tags_df),
+                            selection_type="checkbox")
+                        filter_type = user_selection(
+                            message=
+                            "Which filter would you like to apply to the above set?",
+                            choices=["AND (intersection)", "OR (union)"],
+                            selection_type="list")
 
-                    if filter_type == "AND (intersection)":
-                        subset = and_filter(subset, selected_tags)
-                        this_group_filters.append({
-                            "type": "AND",
-                            "tags": selected_tags
-                        })
-                    elif filter_type == "OR (union)":
-                        subset = or_filter(subset, selected_tags)
-                        this_group_filters.append({
-                            "type": "OR",
-                            "tags": selected_tags
-                        })
-                    print(
-                        Fore.GREEN +
-                        "ℹ There are {} images that meet the filter criteria selected."
-                        .format(len(subset)))
-                    len_subsets.append(len(subset))
+                        if filter_type == "AND (intersection)":
+                            subset = and_filter(subset, selected_tags)
+                            this_group_filters.append({
+                                "type": "AND",
+                                "tags": selected_tags
+                            })
+                        elif filter_type == "OR (union)":
+                            subset = or_filter(subset, selected_tags)
+                            this_group_filters.append({
+                                "type": "OR",
+                                "tags": selected_tags
+                            })
+                        print(
+                            Fore.GREEN +
+                            "ℹ There are {} images that meet the filter criteria selected."
+                            .format(len(subset)))
+                        len_subsets.append(len(subset))
+
+                        if not user_confirms(
+                                message=
+                                "Would you like to continue filtering this set?",
+                                default=False):
+                            set_name = user_input(
+                                message="What would you like to name this set?",
+                                validator=FilenameValidator)
+                            sets[set_name] = subset
+                            filter_metadata["groups"].append({
+                                "name":
+                                set_name,
+                                "filters":
+                                this_group_filters
+                            })
+                            break
 
                     if not user_confirms(
                             message=
-                            "Would you like to continue filtering this set?",
+                            "Would you like to create more sets via filtering?",
                             default=False):
-                        set_name = user_input(
-                            message="What would you like to name this set?",
-                            validator=FilenameValidator)
-                        sets[set_name] = subset
-                        filter_metadata["groups"].append({
-                            "name":
-                            set_name,
-                            "filters":
-                            this_group_filters
-                        })
                         break
 
-                if not user_confirms(
+                sets_to_join = []
+                for set_name, set_data in sets.items():
+                    how_many = user_input(
                         message=
-                        "Would you like to create more sets via filtering?",
-                        default=False):
-                    break
+                        'How many images of set "{}" would you like to use? (?/{})'
+                        .format(set_name, len(set_data)),
+                        validator=IntegerValidator,
+                        default=str(len(set_data)))
+                    n = int(how_many)
+                    sets_to_join.append(
+                        set_data.sample(n, replace=False, random_state=42))
 
-            sets_to_join = []
-            for set_name, set_data in sets.items():
-                how_many = user_input(
-                    message=
-                    'How many images of set "{}" would you like to use? (?/{})'
-                    .format(set_name, len(set_data)),
-                    validator=IntegerValidator,
-                    default=str(len(set_data)))
-                n = int(how_many)
-                sets_to_join.append(
-                    set_data.sample(n, replace=False, random_state=42))
+                    # find the right group within the metadata dict and add the number
+                    # included to it
+                    for group in filter_metadata["groups"]:
+                        if group["name"] == set_name:
+                            group["number_included"] = n
 
-                # find the right group within the metadata dict and add the number
-                # included to it
-                for group in filter_metadata["groups"]:
-                    if group["name"] == set_name:
-                        group["number_included"] = n
+                image_ids = join_sets(sets_to_join).index.tolist()
 
-            image_ids = join_sets(sets_to_join).index.tolist()
-
+            except:
+                # image_ids = tags_df.index.tolist()
+                print("Sorry, there were no tags on the data to filter by or the user killed the program. Exiting...")
+                sys.exit(1)
         else:
             image_ids = tags_df.index.tolist()
 

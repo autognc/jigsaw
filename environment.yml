@@ -2,18 +2,19 @@ name: jigsaw
 channels:
     - defaults
 dependencies:
-    - conda-forge::opencv=3.4.4
     - numpy=1.16.2
     - pandas=0.24.1
     - pillow=5.4.1
     - pip=19.0.3
     - python=3.6.8
     - requests=2.21.0
+    - pytest
     - pip:
           - boto3==1.9.111
           - colorama==0.3.9
           - halo==0.0.23
           - object-detection==0.0.3
+          - opencv-python==4.0.0.21
           - questionary==1.0.2
           - regex==2019.3.12
           - scikit-learn==0.20.2
