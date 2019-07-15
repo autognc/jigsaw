@@ -119,7 +119,7 @@ class LabeledImageMask(LabeledImage):
                 continue
             color_bgr = np.array([color["B"], color["G"], color["R"]])
             label_masks[label] = color_bgr
-        return LabeledImageMask(image_id, image_filepath, image_type, mask_filepath,
+        return cls(image_id, image_filepath, image_type, mask_filepath,
                                 label_masks, xdim, ydim)
 
     def rename_label(self, original_label, new_label):

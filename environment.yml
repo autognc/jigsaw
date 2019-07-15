@@ -13,9 +13,10 @@ dependencies:
           - boto3==1.9.111
           - colorama==0.3.9
           - halo==0.0.23
-          - object-detection==0.0.3
           - opencv-python==4.0.0.21
+          - object-detection==0.0.3
           - questionary==1.0.2
           - regex==2019.3.12
           - scikit-learn==0.20.2
           - pyyaml==5.1
+          - git+https://github.com/autognc/models@deeplab-0.0.1#egg=deeplab&subdirectory=research/deeplab
