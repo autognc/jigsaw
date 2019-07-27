@@ -141,12 +141,9 @@ def write_out_fold(path, fold_data, is_standard=False):
         path (Path): directory to write folds out to
         fold_data (list): list of tuples, each tuple is (train, validation) sets
     """
-    record_path = path / 'tf'
-    validate_record_path = path / 'validation' / 'tf'
+    record_path = path / 'train'
     if not os.path.exists(record_path):
         os.makedirs(record_path)
-    if not os.path.exists(validate_record_path):
-        os.makedirs(validate_record_path)
 
     # Making it so for standard set, validation set size isn't reliant on KFold size.
     if is_standard:
@@ -159,9 +156,7 @@ def write_out_fold(path, fold_data, is_standard=False):
     test_record_data, train_record_data = split_data(train_subset)
     validate_test_record_data, validate_train_record_data = split_data(validation_subset)
 
-    write_related_data(validation_subset, path / 'validation')
-    write_out_tf_examples(validate_train_record_data, validate_record_path / 'train.record')
-    write_out_tf_examples(validate_test_record_data, validate_record_path / 'test.record')
+    write_related_data(validation_subset, path / 'dev')
     
     # training
     write_out_tf_examples(train_record_data, record_path / 'train.record')
@@ -175,7 +170,7 @@ def write_out_complete_set(path, data):
         path (Path): directory to write complete set out to
         data (list): objects to write to the complete set
     """
-    record_path = path / 'tf'
+    record_path = path / 'train'
     if not os.path.exists(record_path):
         os.makedirs(record_path)
 
@@ -251,7 +246,7 @@ def write_dataset(obj_list,
 
     # Fold subsets.
     folds = divide_into_folds(dev_subset)
-    dev_path = dataset_path / 'dev'
+    dev_path = dataset_path / 'splits'
 
     for fold_num, fold in enumerate(folds):
 
