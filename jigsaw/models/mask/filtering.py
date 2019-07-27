@@ -7,6 +7,7 @@ from pathlib import Path
 
 from jigsaw.cli_utils import Spinner
 from jigsaw.io_utils import copy_data_locally, download_data_from_s3
+from jigsaw.constants import METADATA_PREFIX
 
 
 def ingest_metadata(data_source, **kwargs):
@@ -42,19 +43,18 @@ def load_metadata():
     data_dir = cwd / 'data'
 
     for dir_entry in os.scandir(data_dir):
-        if not dir_entry.name.endswith("_meta.json"):
+        if not dir_entry.name.startswith(METADATA_PREFIX):
             continue
-        image_id = dir_entry.name.rstrip("_meta.json")
+        image_id = dir_entry.name.replace(METADATA_PREFIX, '').replace(".json", '')
         with open(dir_entry.path, "r") as read_file:
             data = json.load(read_file)
-        tag_list = data.get("tags", [])
+        tag_list = data.get("tags", ['untagged'])
         temp = pd.DataFrame(
             dict(zip(tag_list, [True] * len(tag_list))), index=[image_id])
         tags_df = pd.concat((tags_df, temp), sort=False)
     tags_df = tags_df.fillna(False)
 
     return tags_df
-
 
 def and_filter(tags_df, filter_tags):
     """Filters out a set of images based upon the intersection of its tag values

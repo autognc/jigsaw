@@ -186,7 +186,7 @@ class BBoxLabeledImage(LabeledImage):
         if image_filepath is None:
             raise ValueError("Hmm, there doesn't seem to be a valid image filepath.")
 
-        labels_xml_path = data_dir / (f'labels_{image_id}.xml')
+        labels_xml_path = data_dir / f'labels_{image_id}.xml'
         if labels_xml_path.exists():
             return cls.from_PASCAL_VOC(image_id, image_filepath, image_type, labels_xml_path)
         else:
@@ -465,9 +465,7 @@ class BBoxLabeledImage(LabeledImage):
                 image_ids = join_sets(sets_to_join).index.tolist()
 
             except Exception as e:
-                # image_ids = tags_df.index.tolist()
                 print(e)
-                print("Sorry, there were no tags on the data to filter by or the user killed the program. Exiting...")
                 sys.exit(1)
         else:
             image_ids = tags_df.index.tolist()
@@ -479,8 +477,6 @@ class BBoxLabeledImage(LabeledImage):
             image_id = filename[filename.index('_')+1:filename.index('.')]
             if image_id in image_ids:
                 return True
-            else:
-                print(image_id)
 
         if data_source == "Local":
             spinner = Spinner(

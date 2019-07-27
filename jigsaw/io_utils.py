@@ -153,8 +153,6 @@ def download_data_from_s3(bucket_name,
             filename = obj.key.split("/")[-1]
             if condition_func(filename) and not (data_dir / filename).exists():
                 download_queue.put(obj)
-            # elif (data_dir / filename).exists():
-            #     print('skipped because file exists locally')
 
     # wait for the queue to be empty, then join all threads
     download_queue.join()

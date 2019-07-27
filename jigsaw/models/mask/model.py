@@ -18,6 +18,7 @@ from jigsaw.cli_utils import (user_confirms, user_input, user_selection,
 from jigsaw.io_utils import copy_data_locally, download_data_from_s3
 from jigsaw.models.mask.filtering import (ingest_metadata, load_metadata, and_filter, or_filter, join_sets)
 from jigsaw.models.mask.transforms import (load_labels, perform_transforms, Transform)
+from jigsaw.constants import METADATA_PREFIX
 
 
 class LabeledImageMask(LabeledImage):
@@ -34,13 +35,27 @@ class LabeledImageMask(LabeledImage):
     """
     _label_to_int_dict = {}
 
+    # associated_files = {
+    #     "image_type_1": ".png",
+    #     "image_type_2": ".jpg",
+    #     "image_type_3": ".jpeg",
+    #     "metadata": "_meta.json",
+    #     "mask": "_mask.png",
+    #     "labels": "_labels.csv"
+    # }
+    
     associated_files = {
         "image_type_1": ".png",
         "image_type_2": ".jpg",
         "image_type_3": ".jpeg",
-        "metadata": "_meta.json",
-        "mask": "_mask.png",
-        "labels": "_labels.csv"
+        "metadata": ".json",
+        "labels": ".csv",
+    }
+    
+    related_data_prefixes = {
+        "meta": METADATA_PREFIX,
+        'images': 'image_',
+        'labels': 'bboxLabels_'
     }
 
     training_type = "Semantic Segmentation"
@@ -93,17 +108,19 @@ class LabeledImageMask(LabeledImage):
 
         cwd = Path.cwd()
         data_dir = cwd / 'data'
-        mask_filepath = data_dir / str(image_id + "_mask.png")
+        
+        mask_filepath = data_dir / f'mask_{image_id}.png'
         mask_filepath = str(
             mask_filepath.absolute())  # cv2.imread doesn't like Path objects.
-        labels_filepath = data_dir / str(image_id + "_labels.csv")
+        labels_filepath = data_dir / f'labels_{image_id}.csv'
         
         image_filepath = None
         image_type = None
         file_extensions = [".png", ".jpg", ".jpeg"]
         for extension in file_extensions:
-            if os.path.exists(data_dir / str(image_id + extension)):
-                image_filepath = data_dir / str(image_id + extension)
+            temp_filepath = data_dir / f'image_{image_id}{extension}'
+            if os.path.exists(data_dir / f'image_{image_id}{extension}'):
+                image_filepath = data_dir / f'image_{image_id}{extension}'
                 image_type = extension
                 break
 
@@ -120,7 +137,7 @@ class LabeledImageMask(LabeledImage):
                 continue
             color_bgr = np.array([color["B"], color["G"], color["R"]])
             label_masks[label] = color_bgr
-        return LabeledImageMask(image_id, image_filepath, image_type, mask_filepath,
+        return cls(image_id, image_filepath, image_type, mask_filepath,
                                 label_masks, xdim, ydim)
 
     def rename_label(self, original_label, new_label):
@@ -197,7 +214,7 @@ class LabeledImageMask(LabeledImage):
         """
         cwd = Path.cwd()
         data_dir = cwd / 'data'
-        labels_filepath = data_dir / str(self.image_id + "_labels.csv")
+        labels_filepath = data_dir / f'labels_{image_id}.csv'
 
         lines = ["label,R,G,B"]
         for label, color in self.label_masks.items():
@@ -215,7 +232,7 @@ class LabeledImageMask(LabeledImage):
         """
         cwd = Path.cwd()
         data_dir = cwd / 'data'
-        mask_filepath = data_dir / str(self.image_id + "_mask.png")
+        mask_filepath = data_dir / f'mask_{image_id}.png'
 
         cv2.imwrite(str(mask_filepath.absolute()), changed_mask)
 
@@ -387,20 +404,22 @@ class LabeledImageMask(LabeledImage):
 
                 image_ids = join_sets(sets_to_join).index.tolist()
 
-            except:
-                # image_ids = tags_df.index.tolist()
-                print("Sorry, there were no tags on the data to filter by or the user killed the program. Exiting...")
+            except Exception as e:
+                print(e)
                 sys.exit(1)
         else:
             image_ids = tags_df.index.tolist()
 
         def need_file(filename):
-            for suffix in cls.associated_files.values():
-                if not filename.endswith(suffix):
-                    continue
-                image_id = filename.rstrip(suffix)
-                if image_id in image_ids:
-                    return True
+            # for suffix in cls.associated_files.values():
+            #     if not filename.endswith(suffix):
+            #         continue
+            #     image_id = filename.rstrip(suffix)
+            #     if image_id in image_ids:
+            #         return True
+            image_id = filename[filename.index('_')+1:filename.index('.')]
+            if image_id in image_ids:
+                return True
 
         if data_source == "Local":
             spinner = Spinner(
@@ -416,7 +435,7 @@ class LabeledImageMask(LabeledImage):
                 text_color="magenta")
             spinner.start()
             download_data_from_s3(
-                bucket_name=kwargs["bucket"], condition_func=need_file)
+                bucket_name=kwargs["bucket"], filter_vals=kwargs['filter_vals'], condition_func=need_file)
 
         spinner.succeed(text=spinner.text + "Complete.")
 
