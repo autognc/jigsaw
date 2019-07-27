@@ -7,10 +7,11 @@ from pathlib import Path
 
 from jigsaw.cli_utils import Spinner
 from jigsaw.io_utils import copy_data_locally, download_data_from_s3
+from jigsaw.constants import METADATA_PREFIX
 
 
 def ingest_metadata(data_source, **kwargs):
-    only_json_func = lambda filename: filename.endswith("_meta.json")
+    only_json_func = lambda filename: filename.startswith(METADATA_PREFIX)
 
     spinner = Spinner(text="Loading metadata...", text_color="magenta")
     spinner.start()
@@ -42,12 +43,12 @@ def load_metadata():
     data_dir = cwd / 'data'
 
     for dir_entry in os.scandir(data_dir):
-        if not dir_entry.name.endswith("_meta.json"):
+        if not dir_entry.name.startswith(METADATA_PREFIX):
             continue
-        image_id = dir_entry.name.rstrip("_meta.json")
+        image_id = dir_entry.name.replace(METADATA_PREFIX, '').replace(".json", '')
         with open(dir_entry.path, "r") as read_file:
             data = json.load(read_file)
-        tag_list = data.get("tags", [])
+        tag_list = data.get("tags", ['untagged'])
         temp = pd.DataFrame(
             dict(zip(tag_list, [True] * len(tag_list))), index=[image_id])
         tags_df = pd.concat((tags_df, temp), sort=False)
