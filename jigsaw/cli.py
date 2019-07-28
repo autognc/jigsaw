@@ -1,31 +1,24 @@
 #!/usr/bin/env python3
-from __future__ import print_function, unicode_literals
+from __future__ import unicode_literals
 
 import os
 import random
 import shutil
 import time
 import numpy as np
+
 random.seed(42)
 np.random.seed(42)
 
 from pathlib import Path
-
 from colorama import init, Fore
-
 from jigsaw.cli_utils import (list_to_choices, FilenameValidator,
                               IntegerValidator, DirectoryPathValidator,
                               user_selection, user_input, user_confirms,
                               set_proper_cwd, Spinner)
 from jigsaw.data_interface import load_models
-from jigsaw.filtering import load_metadata, and_filter, or_filter, join_sets
-from jigsaw.io_utils import (download_image_data_from_s3,
-                             download_json_metadata_from_s3,
-                             load_BBoxLabeledImages, load_LabeledImageMasks,
-                             upload_dataset, get_bucket_folders)
-from jigsaw.transforms import load_labels, Transform, perform_transforms
-from jigsaw.write_dataset import write_dataset, write_metadata, write_label_map
-from jigsaw.models.mask.model import LabeledImageMask
+from jigsaw.io_utils import upload_dataset, get_bucket_folders
+from jigsaw.write_dataset import write_dataset, write_metadata 
 
 init()
 
@@ -35,11 +28,7 @@ set_proper_cwd()
 
 cwd = Path.cwd()
 data_dir = cwd / 'data'
-# try:
 os.makedirs(data_dir, exist_ok=True)
-# except FileExistsError:
-#     shutil.rmtree(data_dir)
-#     os.makedirs(data_dir)
 
 data_models = load_models()
 training_types = [model.training_type for model in data_models]
@@ -77,15 +66,18 @@ elif data_origin == "S3":
 
     # prompt user for desired prefixes
     user_folder_selection = user_selection(
-        message="Would folder would you like to download from?",
+        message="Which folder would you like to download from?",
         choices=get_bucket_folders(bucket, filter_val),
         selection_type="checkbox",
         sort_choices=True)
-        
+    
     # go through filtering process defined by model
-    image_ids, filter_metadata = model.filter_and_load(
+    image_ids, filter_metadata, temp_dir = model.filter_and_load(
         data_source=data_origin, bucket=bucket, filter_vals=user_folder_selection)
-
+        
+    model.temp_dir = temp_dir
+    
+transform_metadata = []
 try:
     transform_metadata = model.transform(image_ids)
 except NotImplementedError:
@@ -110,7 +102,7 @@ labeled_images = model.construct_all(image_ids)
 write_dataset(
     list(labeled_images.values()),
     custom_dataset_name=dataset_name,
-    num_folds=k_folds_specified)
+    num_folds=int(k_folds_specified))
 
 # write out metadata
 write_metadata(
@@ -126,6 +118,12 @@ try:
 except NotImplementedError:
     pass
 
+spinner.succeed(text=spinner.text + "Complete.")
+
+
+spinner = Spinner(text="Deleting temp directory...", text_color="magenta")
+spinner.start()
+shutil.rmtree(model.temp_dir)
 spinner.succeed(text=spinner.text + "Complete.")
 
 if user_confirms(message="Would you like to upload the dataset to S3?"):
