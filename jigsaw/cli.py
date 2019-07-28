@@ -66,7 +66,7 @@ elif data_origin == "S3":
 
     # prompt user for desired prefixes
     user_folder_selection = user_selection(
-        message="Which folder would you like to download from?",
+        message="Which folders would you like to download from?",
         choices=get_bucket_folders(bucket, filter_val),
         selection_type="checkbox",
         sort_choices=True)
@@ -94,6 +94,9 @@ k_folds_specified = user_input(
 
 comments = user_input("Add any notes or comments about this dataset here:")
 user = user_input("Please enter your first and last name:")
+                
+if user_confirms(message="Write dataset in verbose mode?", default=False):
+    model.verbose_write = True
 
 spinner = Spinner(text="Writing out dataset locally...", text_color="magenta")
 spinner.start()

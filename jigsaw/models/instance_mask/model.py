@@ -15,6 +15,8 @@ from jigsaw.model_utils.types import BoundingBox
 class InstanceImageMask(LabeledImageMask):
     training_type = "Instance Segmentation"
     
+    verbose_write = False
+    
     def __init__(self, image_id, image_path, image_type, label_boxes, mask_path, label_masks, binary_masks,
                  xdim, ydim):
         super().__init__(image_id, image_path, image_type, mask_path, label_masks, xdim, ydim)
@@ -166,8 +168,9 @@ class InstanceImageMask(LabeledImageMask):
             output = io.BytesIO()
             img.save(output, format='PNG')
             encoded_list.append(output.getvalue())
-            os.makedirs(os.path.expanduser('~/Desktop/imgs/' + self.image_id), exist_ok=True)
-            img.save(os.path.expanduser(f'~/Desktop/imgs/{self.image_id}/' + str(uuid.uuid4()) + '.png'), format='PNG')
+            if self.verbose_write:
+                os.makedirs(os.path.expanduser('~/Desktop/jigsaw_instance_masks/' + self.image_id), exist_ok=True)
+                img.save(os.path.expanduser(f'~/Desktop/jigsaw_instance_masks/{self.image_id}/' + str(uuid.uuid4()) + '.png'), format='PNG')
 
         feature_dict['image/object/mask'] = (dataset_util.bytes_list_feature(encoded_list))
 
