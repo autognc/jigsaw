@@ -128,10 +128,10 @@ def download_data_from_s3(bucket_name,
 
     cwd = Path.cwd()
     data_dir = cwd / 'data'
-    try:
-        os.makedirs(data_dir)
-    except FileExistsError:
-        pass
+    # try:
+    os.makedirs(data_dir, exist_ok=True)
+    # except FileExistsError:
+        # pass
     os.chdir(data_dir)
 
     # create a queue for objects that need to be copied
@@ -185,18 +185,18 @@ def download_json_metadata_from_s3(bucket_name, prefix="", num_threads=20):
             obj = queue.get()
             if obj is None:
                 break
-            obj.Object().download_file(obj.key.lstrip(prefix))
+            obj.Object().download_file(obj.key.replace(prefix, ''))
             queue.task_done()
 
     # create a directory to store downloaded metadata
     cwd = Path.cwd()
     data_dir = cwd / 'data'
     json_dir = data_dir / 'json'
-    try:
-        os.makedirs(json_dir)
-    except FileExistsError:
-        shutil.rmtree(json_dir)
-        os.makedirs(json_dir)
+    # try:
+    os.makedirs(json_dir, exist_ok=True)
+    # except FileExistsError:
+    #     shutil.rmtree(json_dir)
+    #     os.makedirs(json_dir)
     os.chdir(json_dir)
 
     # create a queue for objects that need to be downloaded
@@ -280,7 +280,7 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
     bucket = s3.Bucket(os.environ["LABELED_BUCKET_NAME"])
     for obj in bucket.objects.filter(Prefix=prefix):
         if obj.key.endswith("_mask.png"):
-            image_id = obj.key.lstrip(prefix).rstrip("_mask.png")
+            image_id = obj.key.replace(prefix,'').replace("_mask.png", '')
             if image_id in image_ids:
                 download_queue.put(obj)
 
@@ -316,7 +316,7 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
     bucket = s3.Bucket(os.environ["LABELED_BUCKET_NAME"])
     for obj in bucket.objects.filter(Prefix=prefix):
         if obj.key.endswith("_labels.csv"):
-            image_id = obj.key.lstrip(prefix).rstrip("_labels.csv")
+            image_id = obj.key.replace(prefix, '').replace("_labels.csv", '')
             if image_id in image_ids:
                 download_queue.put(obj)
 
@@ -354,7 +354,7 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
         file_extensions = [".png", ".jpg", ".jpeg"]
         for extension in file_extensions:
             if obj.key.endswith(extension):
-                image_id = obj.key.lstrip(prefix).rstrip(extension)
+                image_id = obj.key.replace(prefix, '').replace(extension, '')
                 if image_id in image_ids:
                     download_queue.put(obj)
 

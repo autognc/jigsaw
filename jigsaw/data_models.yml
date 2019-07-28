@@ -2,3 +2,5 @@
   model_class: LabeledImageMask
 - parent_module: jigsaw.models.bbox.model
   model_class: BBoxLabeledImage
+- parent_module: jigsaw.models.deeplab.model
+  model_class: DeeplabLabeledImage

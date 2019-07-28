@@ -35,11 +35,11 @@ set_proper_cwd()
 
 cwd = Path.cwd()
 data_dir = cwd / 'data'
-try:
-    os.makedirs(data_dir)
-except FileExistsError:
-    shutil.rmtree(data_dir)
-    os.makedirs(data_dir)
+# try:
+os.makedirs(data_dir, exist_ok=True)
+# except FileExistsError:
+#     shutil.rmtree(data_dir)
+#     os.makedirs(data_dir)
 
 data_models = load_models()
 training_types = [model.training_type for model in data_models]

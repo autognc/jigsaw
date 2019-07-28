@@ -20,6 +20,7 @@ from jigsaw.cli_utils import (user_confirms, user_input, user_selection,
 from jigsaw.io_utils import copy_data_locally, download_data_from_s3
 from jigsaw.models.bbox.filtering import (ingest_metadata, load_metadata, and_filter, or_filter, join_sets)
 from jigsaw.models.bbox.transforms import (load_labels, perform_transforms, Transform)
+from jigsaw.constants import METADATA_PREFIX
 
 
 class BBoxLabeledImage(LabeledImage):
@@ -39,10 +40,15 @@ class BBoxLabeledImage(LabeledImage):
         "image_type_1": ".png",
         "image_type_2": ".jpg",
         "image_type_3": ".jpeg",
-        "metadata": "_meta.json",
-        "mask": "_mask.png",
-        "labels": "_labels.csv",
-        "PASCAL_VOC_labels": "_labels.xml"
+        "metadata": ".json",
+        "labels": ".csv",
+        "PASCAL_VOC_labels": ".xml"
+    }
+    
+    related_data_prefixes = {
+        "meta": METADATA_PREFIX,
+        'images': 'image_',
+        'labels': 'bboxLabels_'
     }
 
     training_type = "Bounding Box"
@@ -143,8 +149,8 @@ class BBoxLabeledImage(LabeledImage):
                 label_boxes.append(box)
 
         bbox = BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
-        os.remove(mask_filepath)
-        os.remove(labels_filepath)
+        # os.remove(mask_filepath)
+        # os.remove(labels_filepath)
         bbox.save_changes()
         return bbox
 
@@ -171,20 +177,21 @@ class BBoxLabeledImage(LabeledImage):
         image_type = None
         file_extensions = [".png", ".jpg", ".jpeg"]
         for extension in file_extensions:
-            if os.path.exists(data_dir / str(image_id + extension)):
-                image_filepath = data_dir / str(image_id + extension)
+            temp_filepath = data_dir / f'image_{image_id}{extension}'
+            if os.path.exists(data_dir / f'image_{image_id}{extension}'):
+                image_filepath = data_dir / f'image_{image_id}{extension}'
                 image_type = extension
                 break
 
         if image_filepath is None:
             raise ValueError("Hmm, there doesn't seem to be a valid image filepath.")
 
-        labels_xml_path = data_dir / (str(image_id) + "_labels.xml")
+        labels_xml_path = data_dir / f'labels_{image_id}.xml'
         if labels_xml_path.exists():
             return cls.from_PASCAL_VOC(image_id, image_filepath, image_type, labels_xml_path)
         else:
-            mask_filepath = data_dir / str(image_id + "_mask.png")
-            labels_filepath = data_dir / str(image_id + "_labels.csv")
+            mask_filepath = data_dir / f'mask_{image_id}.png'
+            labels_filepath = data_dir / f'labels_{image_id}.csv'
             
             return cls.from_semantic_labels(image_id, image_filepath, image_type, mask_filepath, labels_filepath, skip_background)
 
@@ -297,7 +304,7 @@ class BBoxLabeledImage(LabeledImage):
 
         xml_data = str(ET.tostring(annotation, encoding='unicode'))
         
-        xml_file = open(data_dir / (self.image_id + "_labels.xml"), 'w')
+        xml_file = open(data_dir / f'bboxLabels_{self.image_id}.xml', 'w')
         xml_file.write(xml_data)
         xml_file.close()
 
@@ -457,20 +464,19 @@ class BBoxLabeledImage(LabeledImage):
 
                 image_ids = join_sets(sets_to_join).index.tolist()
 
-            except:
-                # image_ids = tags_df.index.tolist()
-                print("Sorry, there were no tags on the data to filter by or the user killed the program. Exiting...")
+            except Exception as e:
+                print(e)
                 sys.exit(1)
         else:
             image_ids = tags_df.index.tolist()
 
         def need_file(filename):
-            for suffix in cls.associated_files.values():
-                if not filename.endswith(suffix):
-                    continue
-                image_id = filename.rstrip(suffix)
-                if image_id in image_ids:
-                    return True
+            # for suffix in cls.associated_files.values():
+            #     if not filename.endswith(suffix):
+            #         continue
+            image_id = filename[filename.index('_')+1:filename.index('.')]
+            if image_id in image_ids:
+                return True
 
         if data_source == "Local":
             spinner = Spinner(
@@ -486,7 +492,7 @@ class BBoxLabeledImage(LabeledImage):
                 text_color="magenta")
             spinner.start()
             download_data_from_s3(
-                bucket_name=kwargs["bucket"], condition_func=need_file)
+                bucket_name=kwargs["bucket"], filter_vals=kwargs['filter_vals'], condition_func=need_file)
 
         spinner.succeed(text=spinner.text + "Complete.")
 

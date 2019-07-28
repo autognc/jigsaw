@@ -30,10 +30,18 @@ class LabeledImage(ABC):
     def transform(cls, image_ids, **kwargs):
         raise NotImplementedError
 
+    # file extensions of any file relevant to this model
     @property
     @classmethod
     @abstractmethod
     def associated_files(cls):
+        raise NotImplementedError
+    
+    # prefixes of any file actually needed to validation/testing data from this model
+    @property
+    @classmethod
+    @abstractmethod
+    def related_data_prefixes(cls):
         raise NotImplementedError
 
     @property
@@ -100,10 +108,11 @@ class LabeledImage(ABC):
     def copy_associated_files(self, destination, **kwargs):
         data_dir = Path.cwd() / "data"
         for suffix in self.associated_files.values():
-            filepath = data_dir / (self.image_id + suffix)
-            if filepath.exists():
-                shutil.copy(
-                    str(filepath.absolute()), str(destination.absolute()))
+            for prefix in self.related_data_prefixes.values():
+                filepath = data_dir / f'{prefix}{self.image_id}{suffix}'
+                if filepath.exists():
+                    shutil.copy(
+                        str(filepath.absolute()), str(destination.absolute()))
 
 
 def load_models():
