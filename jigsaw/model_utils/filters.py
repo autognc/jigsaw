@@ -48,6 +48,8 @@ def load_metadata():
         with open(dir_entry.path, "r") as read_file:
             data = json.load(read_file)
         tag_list = data.get("tags", ['untagged'])
+        if len(tag_list) == 0:
+            tag_list = ['untagged']
         temp = pd.DataFrame(
             dict(zip(tag_list, [True] * len(tag_list))), index=[image_id])
         tags_df = pd.concat((tags_df, temp), sort=False)

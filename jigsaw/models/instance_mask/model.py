@@ -81,6 +81,8 @@ class InstanceImageMask(LabeledImageMask):
         b = 0
         g = 1
         for label, color in label_masks.items():
+            if label == 'panel_left' or label == 'panel_right':
+                label = 'solar_panel'
             matched = False
             x = [-2 -1, 0, 1, 2]
             iters = [p for p in itertools.product(x, repeat=3)]
@@ -177,4 +179,25 @@ class InstanceImageMask(LabeledImageMask):
         tf_example = tf.train.Example(features=tf.train.Features(feature=feature_dict))
         
         return tf_example
+        
+    @classmethod
+    def write_label_map(cls, dataset_name):
+        """Writes out the TensorFlow Object Detection Label Map
+        
+        Args:
+            dataset_name (str): the name of the dataset
+        """
+        dataset_path = Path.cwd() / 'dataset' / dataset_name
+        label_map_filepath = dataset_path / 'label_map.pbtxt'
+        label_map = []
+        for label_name, label_int in cls._label_to_int_dict.items():
+            if label_name == 'panel_right' or label_name == 'panel_left':
+                continue
+            label_info = "\n".join([
+                "item {", "  id: {id}".format(id=label_int),
+                "  name: '{name}'".format(name=label_name), "}"
+            ])
+            label_map.append(label_info)
+        with open(label_map_filepath, 'w') as outfile:
+            outfile.write("\n\n".join(label_map))
             
