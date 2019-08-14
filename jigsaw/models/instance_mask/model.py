@@ -69,7 +69,7 @@ class InstanceImageMask(LabeledImageMask):
 
         label_masks = {}
         for label, color in labels_df.iterrows():
-            if label == "Background" and skip_background:
+            if label == "background" and skip_background:
                 continue
             color_bgr = np.array([color["B"], color["G"], color["R"]])
             label_masks[label] = color_bgr
