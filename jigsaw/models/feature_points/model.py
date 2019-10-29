@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 import os
 import cv2
 import json
@@ -9,6 +10,7 @@ from jigsaw.data_interface import LabeledImage
 from jigsaw.model_utils.filters import default_filter_and_load
 from jigsaw.model_utils.transforms import default_perform_transforms
 from jigsaw.constants import METADATA_PREFIX
+
 
 class FeaturePointsRegression(LabeledImage):
     training_type = "Feature Points Regression"
@@ -26,7 +28,8 @@ class FeaturePointsRegression(LabeledImage):
     }
 
     temp_dir = None
-    _num_feature_points = None
+    _feature_point_labels = None
+    _aggregate = None
 
     def __init__(self, image_id, image_path, image_type, meta_path, xdim, ydim):
         super().__init__(image_id)
@@ -60,11 +63,31 @@ class FeaturePointsRegression(LabeledImage):
         if not os.path.exists(meta_filepath):
             raise ValueError("Hmm, there doesn't seem to be a valid metadata filepath.")
 
-        with open(meta_filepath, 'r') as f:
-            feature_points = json.load(f)['truth_centroids']
-        cls._num_feature_points = len(feature_points)
+        # if this is the first image, load the feature point labels
+        if not cls._feature_point_labels:
+            with open(meta_filepath, 'r') as f:
+                feature_points = json.load(f)['truth_centroids']
+            cls._feature_point_labels = sorted(feature_points.keys())
 
-        ydim, xdim, _ = cv2.imread(str(image_filepath.absolute())).shape
+        image = cv2.imread(str(image_filepath.absolute()))
+        ydim, xdim, channels = image.shape
+
+        if not cls._aggregate:
+            mean = np.zeros([ydim, xdim, channels], dtype=np.float32)
+            m2 = np.zeros([ydim, xdim, channels], dtype=np.float32)
+            cls._aggregate = (0, mean, m2)
+        elif list(cls._aggregate[1].shape) != [ydim, xdim, channels]:
+            raise ValueError(f"Found image with incompatible shape {[ydim, xdim, channels]}")
+
+        # aggregate the mean and squared distance from mean using
+        # Welford's algorithm (https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm)
+        count, mean, m2 = cls._aggregate
+        count += 1
+        delta = image - mean
+        mean += delta / count
+        delta2 = image - mean
+        m2 += delta * delta2
+        cls._aggregate = (count, mean, m2)
         return cls(image_id, image_filepath, image_type, meta_filepath, xdim, ydim)
 
     @classmethod
@@ -79,27 +102,31 @@ class FeaturePointsRegression(LabeledImage):
 
     @classmethod
     def write_additional_files(cls, dataset_name, **kwargs):
-        output_path = Path.cwd() / 'dataset' / dataset_name / 'num_feature_points.txt'
+        output_path = Path.cwd() / 'dataset' / dataset_name / 'feature_points.json'
         with open(output_path, 'w') as f:
-            f.write(cls._num_feature_points)
-            f.write('\n')
+            json.dump(cls._feature_point_labels, f)
+
+        mean_path = Path.cwd() / 'dataset' / dataset_name / 'mean.npy'
+        stdev_path = Path.cwd() / 'dataset' / dataset_name / 'stdev.npy'
+        count, mean, m2 = cls._aggregate
+        np.save(str(mean_path), mean)
+        np.save(str(stdev_path), np.sqrt(m2 / count))
 
     def export_as_TFExample(self):
         with tf.gfile.GFile(str(self.image_path), 'rb') as fid:
             encoded_png = fid.read()
 
         with open(self.meta_path, 'r') as f:
-            feature_points = json.load(f)['truth_centroids']
-        if len(feature_points) != self._num_feature_points:
+            metadata = json.load(f)
+            feature_points = metadata['truth_centroids']
+            pose = metadata['pose']
+        if sorted(feature_points.keys()) != self._feature_point_labels:
             raise ValueError(
-                f"File {self.image_path} contains the wrong number of feature points: expected {self._num_feature_points}, got {len(feature_points)}"
+                f"File {self.image_path} contains inconsistent feature points: expected {self._feature_point_labels}, got {sorted(feature_points.keys())}"
             )
         # sort by key to make sure always the same order
-        feature_points = sorted(feature_points.items())
-
-        feature_point_labels = [f[0].encode('utf-8') for f in feature_points]
-        feature_point_xcoords = [f[1][0] for f in feature_points]
-        feature_point_ycoords = [f[1][1] for f in feature_points]
+        feature_points = [feature_points[k] for k in self._feature_point_labels]
+        feature_points = [x[0] for x in feature_points] + [x[1] for x in feature_points]
 
         return tf.train.Example(
             features=tf.train.Features(
@@ -114,8 +141,8 @@ class FeaturePointsRegression(LabeledImage):
                         dataset_util.bytes_feature(encoded_png),
                     'image_format':
                         dataset_util.bytes_feature(self.image_type.encode('utf-8')),
-                    'feature_point_labels':
-                        dataset_util.bytes_list_feature(feature_point_labels),
                     'feature_points':
-                        dataset_util.int64_list_feature(feature_point_xcoords + feature_point_ycoords)
+                        dataset_util.int64_list_feature(feature_points),
+                    'pose':
+                        dataset_util.float_list_feature(pose)
                 }))
