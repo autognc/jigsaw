@@ -72,8 +72,16 @@ class BBoxLabeledImage(LabeledImage):
         except KeyError:
             skip_background = True
 
-        cwd = Path.cwd()
-        data_dir = cwd / 'data'
+        if cls.temp_dir is None:
+            cwd = Path.cwd()
+            data_dir = cwd / 'data'
+        else:
+            data_dir = cls.temp_dir
+
+        mask_filepath = data_dir / f'mask_{image_id}.png'
+        mask_filepath = str(
+            mask_filepath.absolute())  # cv2.imread doesn't like Path objects.
+        labels_filepath = data_dir / f'labels_{image_id}.csv'
 
         image_filepath = None
         image_type = None
@@ -88,14 +96,50 @@ class BBoxLabeledImage(LabeledImage):
         if image_filepath is None:
             raise ValueError("Hmm, there doesn't seem to be a valid image filepath.")
 
-        labels_xml_path = data_dir / f'labels_{image_id}.xml'
-        if labels_xml_path.exists():
-            return cls.from_PASCAL_VOC(image_id, image_filepath, image_type, labels_xml_path)
-        else:
-            mask_filepath = data_dir / f'mask_{image_id}.png'
-            labels_filepath = data_dir / f'labels_{image_id}.csv'
+        labels_df = pd.read_csv(labels_filepath, index_col="label")
+        image_mask = cv2.imread(mask_filepath)
+        ydim, xdim, _ = image_mask.shape
+
+        label_masks = {}
+        for label, color in labels_df.iterrows():
+            if label == "background" and skip_background:
+                continue
+            color_bgr = np.array([color["B"], color["G"], color["R"]])
+            label_masks[label] = color_bgr
+        
+        label_boxes = []
+        image_mask = cv2.imread(mask_filepath)
+        for label, color in label_masks.items():
+            mask = np.zeros(image_mask.shape, dtype=np.uint8)
             
-            return cls.from_semantic_labels(image_id, image_filepath, image_type, mask_filepath, labels_filepath, skip_background)
+            matched = False
+
+            match = np.where((image_mask == color).all(axis=2))
+            y, x = match
+            if len(y) != 0 and len(x) != 0:
+                mask[match] = [255, 255, 255]
+                matched = True
+                    
+            cls.add_label_int(label)
+
+            if not matched:
+                print("NOT MATCHED")
+                continue
+            
+            rows = np.any(mask, axis=1)
+            cols = np.any(mask, axis=0)
+            ymin, ymax = np.where(rows)[0][[0, -1]]
+            xmin, xmax = np.where(cols)[0][[0, -1]]
+
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+            
+            box = BoundingBox(label, xmin, xmax, ymin, ymax, cls)
+            label_boxes.append(box)
+
+        bbox = BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
+        bbox.save_changes()
+
+        return bbox
     
     @classmethod
     def filter_and_load(cls, data_source, **kwargs):
@@ -141,13 +185,14 @@ class BBoxLabeledImage(LabeledImage):
 
         label_masks = {}
         for label, color in labels_df.iterrows():
-            if label == "Background" and skip_background:
+            if label.lower() == "background" and skip_background:
                 continue
             color_bgr = np.array([color["B"], color["G"], color["R"]])
             label_masks[label] = color_bgr
         
         label_boxes = []
         image_mask = cv2.imread(mask_filepath)
+        mask = np.zeros(image_mask.shape, dtype=np.uint8)
         for label, color in label_masks.items():
             match = np.where((image_mask == color).all(axis=2))
             y, x = match
@@ -155,7 +200,6 @@ class BBoxLabeledImage(LabeledImage):
                 continue
             cls.add_label_int(label)
 
-            mask = np.zeros(image_mask.shape, dtype=np.uint8)
             mask[match] = (255, 255, 255)
             mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
             instances = cls.segment_by_instance(mask)
