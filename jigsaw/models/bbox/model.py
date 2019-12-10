@@ -123,15 +123,13 @@ class BBoxLabeledImage(LabeledImage):
             cls.add_label_int(label)
 
             if not matched:
-                print("NOT MATCHED")
+                #print("NOT MATCHED")
                 continue
             
             rows = np.any(mask, axis=1)
             cols = np.any(mask, axis=0)
             ymin, ymax = np.where(rows)[0][[0, -1]]
             xmin, xmax = np.where(cols)[0][[0, -1]]
-
-            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
             
             box = BoundingBox(label, xmin, xmax, ymin, ymax, cls)
             label_boxes.append(box)
