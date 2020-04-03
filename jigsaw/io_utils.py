@@ -123,6 +123,7 @@ def download_data_from_s3(bucket_name,
             queue.task_done()
 
     cwd = Path.cwd()
+    print(cwd)
     data_dir = cwd / 'data'
     # try:
     os.makedirs(data_dir, exist_ok=True)

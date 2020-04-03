@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import xml.etree.ElementTree as ET
+import json
 from pathlib import Path
 from object_detection.utils import dataset_util
 from jigsaw.data_interface import LabeledImage
@@ -67,35 +68,36 @@ class BBoxLabeledImage(LabeledImage):
             LabeledImageMask: the object representative of this semantically-
                 labeled image
         """
-        try:
-            skip_background = kwargs["skip_background"]
-        except KeyError:
-            skip_background = True
-
-        cwd = Path.cwd()
-        data_dir = cwd / 'data'
+        if cls.temp_dir is None:
+            cwd = Path.cwd()
+            data_dir = cwd / 'data'
+        else:
+            data_dir = cls.temp_dir
 
         image_filepath = None
         image_type = None
         file_extensions = [".png", ".jpg", ".jpeg"]
         for extension in file_extensions:
-            temp_filepath = data_dir / f'image_{image_id}{extension}'
             if os.path.exists(data_dir / f'image_{image_id}{extension}'):
                 image_filepath = data_dir / f'image_{image_id}{extension}'
                 image_type = extension
+                ydim, xdim = tuple(cv2.imread(str(image_filepath.absolute())).shape[:2])
                 break
 
         if image_filepath is None:
             raise ValueError("Hmm, there doesn't seem to be a valid image filepath.")
 
-        labels_xml_path = data_dir / f'labels_{image_id}.xml'
-        if labels_xml_path.exists():
-            return cls.from_PASCAL_VOC(image_id, image_filepath, image_type, labels_xml_path)
-        else:
-            mask_filepath = data_dir / f'mask_{image_id}.png'
-            labels_filepath = data_dir / f'labels_{image_id}.csv'
-            
-            return cls.from_semantic_labels(image_id, image_filepath, image_type, mask_filepath, labels_filepath, skip_background)
+        with open(data_dir / f"meta_{image_id}.json", "r") as f:
+            meta = json.load(f)
+
+        label_boxes = []
+        for label, b in meta['bboxes'].items():
+            label_boxes.append(BoundingBox(label, b['xmin'], b['xmax'], b['ymin'], b['ymax'], cls))
+            cls.add_label_int(label)
+
+        bbox = BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
+
+        return bbox
     
     @classmethod
     def filter_and_load(cls, data_source, **kwargs):
@@ -141,13 +143,14 @@ class BBoxLabeledImage(LabeledImage):
 
         label_masks = {}
         for label, color in labels_df.iterrows():
-            if label == "Background" and skip_background:
+            if label.lower() == "background" and skip_background:
                 continue
             color_bgr = np.array([color["B"], color["G"], color["R"]])
             label_masks[label] = color_bgr
         
         label_boxes = []
         image_mask = cv2.imread(mask_filepath)
+        mask = np.zeros(image_mask.shape, dtype=np.uint8)
         for label, color in label_masks.items():
             match = np.where((image_mask == color).all(axis=2))
             y, x = match
@@ -155,7 +158,6 @@ class BBoxLabeledImage(LabeledImage):
                 continue
             cls.add_label_int(label)
 
-            mask = np.zeros(image_mask.shape, dtype=np.uint8)
             mask[match] = (255, 255, 255)
             mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
             instances = cls.segment_by_instance(mask)
