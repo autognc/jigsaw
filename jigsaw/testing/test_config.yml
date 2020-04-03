@@ -1,6 +1,0 @@
-- parent_module: jigsaw.models.mask.model
-  model_class: LabeledImageMask
-  sample_data_relpath: ../models/mask/testing/sample_data
-- parent_module: jigsaw.models.bbox.model
-  model_class: BBoxLabeledImage
-  sample_data_relpath: ../models/bbox/testing/sample_data

@@ -1,27 +1,17 @@
-import numpy as np
-import pandas as pd
-import cv2
-
-from pathlib import Path
-import tensorflow as tf
-import PIL
 import io
 import os
-import sys
+import cv2
+import numpy as np
+import pandas as pd
+import tensorflow as tf
 import xml.etree.ElementTree as ET
-
-from colorama import init, Fore
-from halo import Halo
+from pathlib import Path
 from object_detection.utils import dataset_util
-
 from jigsaw.data_interface import LabeledImage
-from jigsaw.cli_utils import (user_confirms, user_input, user_selection,
-                              FilenameValidator, IntegerValidator, Spinner)
-from jigsaw.io_utils import copy_data_locally, download_data_from_s3
-from jigsaw.models.bbox.filtering import (ingest_metadata, load_metadata, and_filter, or_filter, join_sets)
-from jigsaw.models.bbox.transforms import (load_labels, perform_transforms, Transform)
+from jigsaw.model_utils.filters import default_filter_and_load
+from jigsaw.model_utils.transforms import default_perform_transforms
+from jigsaw.model_utils.types import BoundingBox
 from jigsaw.constants import METADATA_PREFIX
-
 
 class BBoxLabeledImage(LabeledImage):
     """Stores bounding-box-labeled image data and provides related operations
@@ -34,7 +24,7 @@ class BBoxLabeledImage(LabeledImage):
         xdim (int): width of the image (in pixels)
         ydim (int): height of the image (in pixels)
     """
-    label_to_int_dict = {}
+    _label_to_int_dict = {}
 
     associated_files = {
         "image_type_1": ".png",
@@ -51,9 +41,12 @@ class BBoxLabeledImage(LabeledImage):
         'labels': 'bboxLabels_'
     }
 
+    temp_dir = None
+
     training_type = "Bounding Box"
     
     def __init__(self, image_id, image_path, image_type, label_boxes, xdim, ydim):
+        super().__init__(image_id)
         self.image_id = image_id
         self.image_path = image_path
         self.image_type = image_type
@@ -61,99 +54,8 @@ class BBoxLabeledImage(LabeledImage):
         self.xdim = xdim
         self.ydim = ydim
     
-    @classmethod
-    def renumber_label_to_int_dict(cls):
-        for i, label in enumerate(BBoxLabeledImage.label_to_int_dict.keys()):
-            BBoxLabeledImage.label_to_int_dict[label] = i + 1
     
-    @classmethod
-    def delete_label_int(cls, label):
-        if label in BBoxLabeledImage.label_to_int_dict.keys():
-            del BBoxLabeledImage.label_to_int_dict[label]
-            # renumber all values
-            cls.renumber_label_to_int_dict()
-    
-    @classmethod
-    def add_label_int(cls, label_to_add):
-        if label_to_add not in BBoxLabeledImage.label_to_int_dict.keys():
-            # add the new label
-            BBoxLabeledImage.label_to_int_dict[label_to_add] = None
-
-            # renumber all values
-            cls.renumber_label_to_int_dict()
-
-    @classmethod
-    def from_PASCAL_VOC(cls, image_id, image_filepath, image_type, labels_filepath):
-        label_boxes = []
-        tree = ET.parse(str(labels_filepath.absolute()))
-        root = tree.getroot()
-        size = root.find("size")
-        xdim = int(size.find("width").text)
-        ydim = int(size.find("height").text)
-        for member in root.findall('object'):
-            label = member.find("name").text
-            bndbox = member.find("bndbox")
-            xmin = int(bndbox.find("xmin").text)
-            xmax = int(bndbox.find("xmax").text)
-            ymin = int(bndbox.find("ymin").text)
-            ymax = int(bndbox.find("ymax").text)
-            cls.add_label_int(label)
-            box = BoundingBox(label, xmin, xmax, ymin, ymax)
-            label_boxes.append(box)
-        return BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
-
-
-    @classmethod
-    def segment_by_instance(cls, mask):
-        instances = []
-        blurred = cv2.GaussianBlur(mask, (5, 5), 0)
-        contours, _ = cv2.findContours(blurred.copy(), cv2.RETR_EXTERNAL,
-                                        cv2.CHAIN_APPROX_SIMPLE)
-        for contour in contours:
-            x, y, w, h = cv2.boundingRect(contour)
-            instances.append({"xmin": x, "xmax": x + w, "ymin": y, "ymax": y + h})
-        return instances
-
-    @classmethod
-    def from_semantic_labels(cls, image_id, image_filepath, image_type, mask_filepath, labels_filepath, skip_background):
-        mask_filepath = str(
-            mask_filepath.absolute())  # cv2.imread doesn't like Path objects.
-
-        labels_df = pd.read_csv(labels_filepath, index_col="label")
-        image_mask = cv2.imread(mask_filepath)
-        ydim, xdim, _ = image_mask.shape
-
-        label_masks = {}
-        for label, color in labels_df.iterrows():
-            if label == "Background" and skip_background:
-                continue
-            color_bgr = np.array([color["B"], color["G"], color["R"]])
-            label_masks[label] = color_bgr
-        
-        label_boxes = []
-        image_mask = cv2.imread(mask_filepath)
-        for label, color in label_masks.items():
-            match = np.where((image_mask == color).all(axis=2))
-            y, x = match
-            if len(y) == 0 or len(x) == 0:
-                continue
-            cls.add_label_int(label)
-
-            mask = np.zeros(image_mask.shape, dtype=np.uint8)
-            mask[match] = (255, 255, 255)
-            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-            instances = cls.segment_by_instance(mask)
-            for instance in instances:
-                box = BoundingBox(label,
-                    instance["xmin"], instance["xmax"], instance["ymin"], instance["ymax"])
-                label_boxes.append(box)
-
-        bbox = BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
-        # os.remove(mask_filepath)
-        # os.remove(labels_filepath)
-        bbox.save_changes()
-        return bbox
-
+    ## CLASS METHODS ##
     @classmethod
     def construct(cls, image_id, **kwargs):
         """Constructs a BBoxLabeledImage object from a set of standard files
@@ -194,7 +96,100 @@ class BBoxLabeledImage(LabeledImage):
             labels_filepath = data_dir / f'labels_{image_id}.csv'
             
             return cls.from_semantic_labels(image_id, image_filepath, image_type, mask_filepath, labels_filepath, skip_background)
+    
+    @classmethod
+    def filter_and_load(cls, data_source, **kwargs):
+        image_ids, filter_metadata, temp_dir = default_filter_and_load(data_source=data_source, **kwargs)
+        return image_ids, filter_metadata, temp_dir
 
+    @classmethod
+    def transform(cls, image_ids, **kwargs):
+        transform_metadata = default_perform_transforms(image_ids, cls, cls.temp_dir, **kwargs)
+        return transform_metadata
+
+    @classmethod
+    def write_additional_files(cls, dataset_name, **kwargs):
+        cls.write_label_map(dataset_name)
+
+    @classmethod
+    def write_label_map(cls, dataset_name):
+        """Writes out the TensorFlow Object Detection Label Map
+        
+        Args:
+            dataset_name (str): the name of the dataset
+        """
+        dataset_path = Path.cwd() / 'dataset' / dataset_name
+        label_map_filepath = dataset_path / 'label_map.pbtxt'
+        label_map = []
+        for label_name, label_int in cls._label_to_int_dict.items():
+            label_info = "\n".join([
+                "item {", "  id: {id}".format(id=label_int),
+                "  name: '{name}'".format(name=label_name), "}"
+            ])
+            label_map.append(label_info)
+        with open(label_map_filepath, 'w') as outfile:
+            outfile.write("\n\n".join(label_map))
+
+    @classmethod
+    def from_semantic_labels(cls, image_id, image_filepath, image_type, mask_filepath, labels_filepath, skip_background):
+        mask_filepath = str(
+            mask_filepath.absolute())  # cv2.imread doesn't like Path objects.
+
+        labels_df = pd.read_csv(labels_filepath, index_col="label")
+        image_mask = cv2.imread(mask_filepath)
+        ydim, xdim, _ = image_mask.shape
+
+        label_masks = {}
+        for label, color in labels_df.iterrows():
+            if label == "Background" and skip_background:
+                continue
+            color_bgr = np.array([color["B"], color["G"], color["R"]])
+            label_masks[label] = color_bgr
+        
+        label_boxes = []
+        image_mask = cv2.imread(mask_filepath)
+        for label, color in label_masks.items():
+            match = np.where((image_mask == color).all(axis=2))
+            y, x = match
+            if len(y) == 0 or len(x) == 0:
+                continue
+            cls.add_label_int(label)
+
+            mask = np.zeros(image_mask.shape, dtype=np.uint8)
+            mask[match] = (255, 255, 255)
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+            instances = cls.segment_by_instance(mask)
+            for instance in instances:
+                box = BoundingBox(label,
+                    instance["xmin"], instance["xmax"], instance["ymin"], instance["ymax"], cls)
+                label_boxes.append(box)
+
+        bbox = BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
+        bbox.save_changes()
+        return bbox
+
+    @classmethod
+    def from_PASCAL_VOC(cls, image_id, image_filepath, image_type, labels_filepath):
+        label_boxes = []
+        tree = ET.parse(str(labels_filepath.absolute()))
+        root = tree.getroot()
+        size = root.find("size")
+        xdim = int(size.find("width").text)
+        ydim = int(size.find("height").text)
+        for member in root.findall('object'):
+            label = member.find("name").text
+            bndbox = member.find("bndbox")
+            xmin = int(bndbox.find("xmin").text)
+            xmax = int(bndbox.find("xmax").text)
+            ymin = int(bndbox.find("ymin").text)
+            ymax = int(bndbox.find("ymax").text)
+            cls.add_label_int(label)
+            box = BoundingBox(label, xmin, xmax, ymin, ymax, cls)
+            label_boxes.append(box)
+        return BBoxLabeledImage(image_id, image_filepath, image_type, label_boxes, xdim, ydim)
+
+    
+    ## TRANSFORMATIONS ##
     def rename_label(self, original_label, new_label):
         """Renames a given label
         
@@ -252,7 +247,7 @@ class BBoxLabeledImage(LabeledImage):
             self.delete_label_int(label_to_merge)
 
         self.add_label_int(new_label)
-        self.label_boxes.append(BoundingBox(new_label, new_xmin, new_xmax, new_ymin, new_ymax))
+        self.label_boxes.append(BoundingBox(new_label, new_xmin, new_xmax, new_ymin, new_ymax, cls))
 
         self.save_changes()
 
@@ -308,6 +303,8 @@ class BBoxLabeledImage(LabeledImage):
         xml_file.write(xml_data)
         xml_file.close()
 
+    
+    ## EXPORTER ##
     def export_as_TFExample(self):
         """Converts LabeledImageMask object to tf_example
         
@@ -356,287 +353,36 @@ class BBoxLabeledImage(LabeledImage):
 
         return tf_example
 
+
+    ## HELPERS ##
     @classmethod
-    def filter_and_load(cls, data_source, **kwargs):
-        ingest_metadata(data_source, **kwargs)
-
-        tags_df = load_metadata()
-        filter_metadata = {"groups": []}
-        image_ids = []
-
-        # ask the user if they would like to perform filtering
-        # if yes, enter a loop that supplies filter options
-        # if no, skip
-        if user_confirms(
-                message="Would you like to filter out any of the data ({} images total)?".format(len(tags_df)),
-                default=False):
-            sets = {}
-            # outer loop to determine how many sets the user will create
-
-            try:
-                while True:
-                    subset = tags_df
-                    this_group_filters = []
-                    len_subsets = [len(subset)]
-                    # inner loop to handle filtering for ONE set
-                    while True:
-
-                        # if filters have been applied, display them to the user
-                        # to help guide their next choice
-                        if len(this_group_filters) > 0:
-                            filters_applied = [
-                                "   > " + (" " + f["type"] + " ").join(f["tags"]) +
-                                " ({} -> {})".format(len_subsets[i],
-                                                    len_subsets[i + 1])
-                                for i, f in enumerate(this_group_filters)
-                            ]
-                            print(Fore.MAGENTA + "ℹ Filters already applied:\n{}".
-                                format("\n".join(filters_applied)))
-
-                        selected_tags = user_selection(
-                            message=
-                            "Please select a set of tags with which to apply a filter:",
-                            choices=list(tags_df),
-                            selection_type="checkbox")
-                        filter_type = user_selection(
-                            message=
-                            "Which filter would you like to apply to the above set?",
-                            choices=["AND (intersection)", "OR (union)"],
-                            selection_type="list")
-
-                        if filter_type == "AND (intersection)":
-                            subset = and_filter(subset, selected_tags)
-                            this_group_filters.append({
-                                "type": "AND",
-                                "tags": selected_tags
-                            })
-                        elif filter_type == "OR (union)":
-                            subset = or_filter(subset, selected_tags)
-                            this_group_filters.append({
-                                "type": "OR",
-                                "tags": selected_tags
-                            })
-                        print(
-                            Fore.GREEN +
-                            "ℹ There are {} images that meet the filter criteria selected."
-                            .format(len(subset)))
-                        len_subsets.append(len(subset))
-
-                        if not user_confirms(
-                                message=
-                                "Would you like to continue filtering this set?",
-                                default=False):
-                            set_name = user_input(
-                                message="What would you like to name this set?",
-                                validator=FilenameValidator)
-                            sets[set_name] = subset
-                            filter_metadata["groups"].append({
-                                "name":
-                                set_name,
-                                "filters":
-                                this_group_filters
-                            })
-                            break
-
-                    if not user_confirms(
-                            message=
-                            "Would you like to create more sets via filtering?",
-                            default=False):
-                        break
-
-                sets_to_join = []
-                for set_name, set_data in sets.items():
-                    how_many = user_input(
-                        message=
-                        'How many images of set "{}" would you like to use? (?/{})'
-                        .format(set_name, len(set_data)),
-                        validator=IntegerValidator,
-                        default=str(len(set_data)))
-                    n = int(how_many)
-                    sets_to_join.append(
-                        set_data.sample(n, replace=False, random_state=42))
-
-                    # find the right group within the metadata dict and add the number
-                    # included to it
-                    for group in filter_metadata["groups"]:
-                        if group["name"] == set_name:
-                            group["number_included"] = n
-
-                image_ids = join_sets(sets_to_join).index.tolist()
-
-            except Exception as e:
-                print(e)
-                sys.exit(1)
-        else:
-            image_ids = tags_df.index.tolist()
-
-        def need_file(filename):
-            # for suffix in cls.associated_files.values():
-            #     if not filename.endswith(suffix):
-            #         continue
-            image_id = filename[filename.index('_')+1:filename.index('.')]
-            if image_id in image_ids:
-                return True
-
-        if data_source == "Local":
-            spinner = Spinner(
-                text="Copying data locally into Jigsaw...",
-                text_color="magenta")
-            spinner.start()
-            copy_data_locally(
-                source_dir=kwargs["data_filepath"], condition_func=need_file)
-
-        elif data_source == "S3":
-            spinner = Spinner(
-                text="Downloading data from S3...",
-                text_color="magenta")
-            spinner.start()
-            download_data_from_s3(
-                bucket_name=kwargs["bucket"], filter_vals=kwargs['filter_vals'], condition_func=need_file)
-
-        spinner.succeed(text=spinner.text + "Complete.")
-
-        return image_ids, filter_metadata
-
-    @classmethod
-    def transform(cls, image_ids, **kwargs):
-        transform_list = []
-
-        # ask the user if they would like to perform transforms
-        # if yes, enter a loop that supplies transform options
-        # if no, skip
-        if user_confirms(
-                message="Would you like to perform any data transformations?",
-                default=False):
-            spinner = Spinner(
-                text="Loading image labels...", text_color="magenta")
-            spinner.start()
-            labels = load_labels()
-            spinner.succeed(text=spinner.text + "Complete.")
-
-            while True:
-                transform = user_selection(
-                    message="Which type of transformation?",
-                    choices=["Label Renaming", "Label Merging", "Exit"],
-                    sort_choices=False,
-                    selection_type="list")
-
-                if transform == "Exit":
-                    break
-
-                if transform == "Label Renaming":
-                    while True:
-                        original = user_selection(
-                            message="Which label would you like to rename?",
-                            choices=labels,
-                            selection_type="list")
-                        new = user_input(
-                            message="What should the new name be?",
-                            validator=FilenameValidator)
-
-                        labels = [
-                            new if label == original else label
-                            for label in labels
-                        ]
-                        transform_list.append(
-                            Transform(
-                                transform_type="rename",
-                                original=original,
-                                new=new))
-
-                        if not user_confirms(
-                                message="Would you like to continue renaming?",
-                                default=False):
-                            break
-
-                if transform == "Label Merging":
-                    while True:
-                        # insert transforms here
-                        originals = user_selection(
-                            message="Which labels should be merged into one?",
-                            choices=labels,
-                            selection_type="checkbox")
-                        new = user_input(
-                            message="What should the merged name be?",
-                            validator=FilenameValidator)
-
-                        for original in originals:
-                            labels.remove(original)
-                        labels.append(new)
-                        transform_list.append(
-                            Transform(
-                                transform_type="merge",
-                                original=originals,
-                                new=new))
-
-                        if not user_confirms(
-                                message="Would you like to continue merging?",
-                                default=False):
-                            break
-
-            spinner = Spinner(
-                text="Performing transformations...", text_color="magenta")
-            spinner.start()
-            perform_transforms(transform_list, image_ids=image_ids)
-            spinner.succeed(text=spinner.text + "Complete.")
-
-        # collect metadata on transforms
-        transform_metadata = []
-        for transform in transform_list:
-            transform_metadata.append({
-                "type": transform.transform_type,
-                "original": transform.original,
-                "new": transform.new
-            })
-
-        return transform_metadata
-
-    @classmethod
-    def write_additional_files(cls, dataset_name, **kwargs):
-        cls.write_label_map(dataset_name)
-
-    @classmethod
-    def write_label_map(cls, dataset_name):
-        """Writes out the TensorFlow Object Detection Label Map
-        
-        Args:
-            dataset_name (str): the name of the dataset
-        """
-        dataset_path = Path.cwd() / 'dataset' / dataset_name
-        label_map_filepath = dataset_path / 'label_map.pbtxt'
-        label_map = []
-        for label_name, label_int in cls.label_to_int_dict.items():
-            label_info = "\n".join([
-                "item {", "  id: {id}".format(id=label_int),
-                "  name: '{name}'".format(name=label_name), "}"
-            ])
-            label_map.append(label_info)
-        with open(label_map_filepath, 'w') as outfile:
-            outfile.write("\n\n".join(label_map))
-
-
-class BoundingBox:
-    """Stores the label and bounding box dimensions for a detected image region
+    def renumber_label_to_int_dict(cls):
+        for i, label in enumerate(BBoxLabeledImage._label_to_int_dict.keys()):
+            BBoxLabeledImage._label_to_int_dict[label] = i + 1
     
-    Attributes:
-        label (str): the classification label for the region (e.g., "cygnus")
-        xmin (int): the pixel location of the left edge of the bounding box
-        xmax (int): the pixel location of the right edge of the bounding box
-        ymin (int): the pixel location of the top edge of the bounding box
-        ymax (int): the pixel location of the top edge of the bounding box
-    """
-
-    def __init__(self, label, xmin, xmax, ymin, ymax):
-        self.label = label
-        self.xmin = xmin
-        self.xmax = xmax
-        self.ymin = ymin
-        self.ymax = ymax
-
-    def __repr__(self):
-        return "label: {} | xmin: {} | xmax: {} | ymin: {} | ymax: {}".format(
-            self.label, self.xmin, self.xmax, self.ymin, self.ymax)
+    @classmethod
+    def delete_label_int(cls, label):
+        if label in BBoxLabeledImage._label_to_int_dict.keys():
+            del BBoxLabeledImage._label_to_int_dict[label]
+            # renumber all values
+            cls.renumber_label_to_int_dict()
     
-    @property
-    def label_int(self):
-        return BBoxLabeledImage.label_to_int_dict[self.label]
+    @classmethod
+    def add_label_int(cls, label_to_add):
+        if label_to_add not in BBoxLabeledImage._label_to_int_dict.keys():
+            # add the new label
+            BBoxLabeledImage._label_to_int_dict[label_to_add] = None
+
+            # renumber all values
+            cls.renumber_label_to_int_dict()
+    
+    @classmethod
+    def segment_by_instance(cls, mask):
+        instances = []
+        blurred = cv2.GaussianBlur(mask, (5, 5), 0)
+        contours, _ = cv2.findContours(blurred.copy(), cv2.RETR_EXTERNAL,
+                                        cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            instances.append({"xmin": x, "xmax": x + w, "ymin": y, "ymax": y + h})
+        return instances

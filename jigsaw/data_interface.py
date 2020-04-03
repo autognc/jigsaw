@@ -43,6 +43,12 @@ class LabeledImage(ABC):
     @abstractmethod
     def related_data_prefixes(cls):
         raise NotImplementedError
+    
+    @property
+    @classmethod
+    @abstractmethod
+    def temp_dir(cls):
+        raise NotImplementedError
 
     @property
     @classmethod
@@ -106,7 +112,10 @@ class LabeledImage(ABC):
         return labeled_images
 
     def copy_associated_files(self, destination, **kwargs):
-        data_dir = Path.cwd() / "data"
+        if self.temp_dir is None:
+            data_dir = Path.cwd() / "data"
+        else:
+            data_dir = self.temp_dir
         for suffix in self.associated_files.values():
             for prefix in self.related_data_prefixes.values():
                 filepath = data_dir / f'{prefix}{self.image_id}{suffix}'

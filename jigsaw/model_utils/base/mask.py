@@ -1,92 +1,97 @@
+import PIL
+import io
+import os
+import cv2
+import tensorflow as tf
 import numpy as np
 import pandas as pd
-import cv2
-
 from pathlib import Path
-import tensorflow as tf
 from object_detection.utils import dataset_util
-import PIL
-import io, os
+from jigsaw.data_interface import LabeledImage
+from jigsaw.model_utils.filters import default_filter_and_load
+from jigsaw.model_utils.transforms import default_perform_transforms
+from jigsaw.constants import METADATA_PREFIX
 
-
-class LabeledImageMask:
+class LabeledImageMask(LabeledImage):
     """Stores pixel-wise-labeled image data and provides related operations
-
-    NOTE: Standard construction of a LabeledImageMask object comes from the
-    `from_files` method rather than the `__init__` method. This is because we
-    can provide better functionality through multiple classmethod constructors
-    (some of which may be added later.)
 
     Attributes:
         image_id (str): the unique ID for the image and labeled data
         image_path (str): the path to the source image
+        image_type(str): type of image (file extension)
         mask_path (str): the path to the semantic image mask
         label_masks (dict): a dict storing the labels (str) as keys and
             matching pixel colors (3x1 numpy array) in the image mask as values
         xdim (int): width of the image (in pixels)
         ydim (int): height of the image (in pixels)
     """
-    label_to_int_dict = {}
+    _label_to_int_dict = {}
 
-    def __init__(self, image_id, image_path, mask_path, label_masks, xdim,
-                 ydim, image_type):
-        self.image_id = image_id
+    associated_files = {
+        "image_type_1": ".png",
+        "image_type_2": ".jpg",
+        "image_type_3": ".jpeg",
+        "metadata": ".json",
+        "labels": ".csv",
+    }
+    
+    related_data_prefixes = {
+        "meta": METADATA_PREFIX,
+        'images': 'image_',
+        'labels': 'labels_',
+        'masks': 'mask_'
+    }
+    
+    temp_dir = None
+
+    def __init__(self, image_id, image_path, image_type, mask_path, label_masks, xdim,
+                 ydim):
+        super().__init__(image_id)
         self.image_path = image_path
+        self.image_type = image_type
         self.mask_path = mask_path
         self.label_masks = label_masks
         for label in label_masks:
             self.add_label_int(label)
         self.xdim = xdim
         self.ydim = ydim
-        self.image_type = image_type
-
-    def renumber_label_to_int_dict(self):
-        for i, label in enumerate(LabeledImageMask.label_to_int_dict.keys()):
-                LabeledImageMask.label_to_int_dict[label] = i+1
-
-    def delete_label_int(self, label):
-        if label in LabeledImageMask.label_to_int_dict.keys():
-            del LabeledImageMask.label_to_int_dict[label]
-            # renumber all values
-            self.renumber_label_to_int_dict()
-
-    def add_label_int(self, label_to_add):
-        if label_to_add not in LabeledImageMask.label_to_int_dict.keys():
-            # add the new label
-            LabeledImageMask.label_to_int_dict[label_to_add] = None
-            
-            # renumber all values
-            self.renumber_label_to_int_dict()
-
-
+    
+    
+    ## CLASS METHODS ##
     @classmethod
-    def from_files(cls, image_id, skip_background=True):
+    def construct(cls, image_id, **kwargs):
         """Constructs a LabeledImageMask object from a set of standard files
         
         Args:
             image_id (str): the unique ID for this image
-            skip_background (bool, optional): Defaults to True. Whether to
-                include "Background" as a formal class
         
         Returns:
             LabeledImageMask: the object representative of this semantically-
                 labeled image
         """
-        cwd = Path.cwd()
-        data_dir = cwd / 'data'
-        masks_dir = data_dir / 'masks'
-        labels_dir = data_dir / 'labels'
-        images_dir = data_dir / 'images'
-        mask_filepath = masks_dir / str(image_id + "_mask.png")
-        mask_filepath = str(mask_filepath.absolute()) # cv2.imread doesn't like Path objects.
-        labels_filepath = labels_dir / str(image_id + "_labels.csv")
+        try:
+            skip_background = kwargs["skip_background"]
+        except KeyError:
+            skip_background = True
 
+        if cls.temp_dir is None:
+            cwd = Path.cwd()
+            data_dir = cwd / 'data'
+        else:
+            data_dir = cls.temp_dir
+        
+        mask_filepath = data_dir / f'mask_{image_id}.png'
+        mask_filepath = str(
+            mask_filepath.absolute())  # cv2.imread doesn't like Path objects.
+        labels_filepath = data_dir / f'labels_{image_id}.csv'
+        
         image_filepath = None
         image_type = None
         file_extensions = [".png", ".jpg", ".jpeg"]
         for extension in file_extensions:
-            if os.path.exists(images_dir / str(image_id + extension)):
-                image_filepath = images_dir / str(image_id + extension)
+            temp_filepath = data_dir / f'image_{image_id}{extension}'
+            if os.path.exists(data_dir / f'image_{image_id}{extension}'):
+                image_filepath = data_dir / f'image_{image_id}{extension}'
                 image_type = extension
                 break
 
@@ -103,9 +108,45 @@ class LabeledImageMask:
                 continue
             color_bgr = np.array([color["B"], color["G"], color["R"]])
             label_masks[label] = color_bgr
-        return LabeledImageMask(image_id, image_filepath, mask_filepath,
-                                label_masks, xdim, ydim, image_type)
+            
+        return cls(image_id, image_filepath, image_type, mask_filepath,
+                                label_masks, xdim, ydim)
+    
+    @classmethod
+    def filter_and_load(cls, data_source, **kwargs):
+        image_ids, filter_metadata, temp_dir = default_filter_and_load(data_source=data_source, **kwargs)
+        return image_ids, filter_metadata, temp_dir
+    
+    @classmethod
+    def transform(cls, image_ids, **kwargs):
+        transform_metadata = default_perform_transforms(image_ids, cls, cls.temp_dir, **kwargs)
+        return transform_metadata
+        
+    @classmethod
+    def write_additional_files(cls, dataset_name, **kwargs):
+        cls.write_label_map(dataset_name)
 
+    @classmethod
+    def write_label_map(cls, dataset_name):
+        """Writes out the TensorFlow Object Detection Label Map
+        
+        Args:
+            dataset_name (str): the name of the dataset
+        """
+        dataset_path = Path.cwd() / 'dataset' / dataset_name
+        label_map_filepath = dataset_path / 'label_map.pbtxt'
+        label_map = []
+        for label_name, label_int in cls._label_to_int_dict.items():
+            label_info = "\n".join([
+                "item {", "  id: {id}".format(id=label_int),
+                "  name: '{name}'".format(name=label_name), "}"
+            ])
+            label_map.append(label_info)
+        with open(label_map_filepath, 'w') as outfile:
+            outfile.write("\n\n".join(label_map))
+            
+    
+    ## TRANSFORMATIONS ##
     def rename_label(self, original_label, new_label):
         """Renames a given label
         
@@ -116,6 +157,7 @@ class LabeledImageMask:
         # if the new label already exists, treat this as a merge
         if new_label in self.label_masks.keys():
             self.merge_labels([original_label, new_label], new_label)
+            return
 
         # perform rename within the label_masks dict object attribute
         try:
@@ -126,7 +168,7 @@ class LabeledImageMask:
         except KeyError:
             # this image does not have an instance of the original_label
             return
-        
+
         # handle the class attribute for label_to_int conversions
         self.delete_label_int(original_label)
         self.add_label_int(new_label)
@@ -154,7 +196,7 @@ class LabeledImageMask:
                 merged_color = np.random.randint(256, size=3)
             else:
                 break
-        
+
         image_mask = cv2.imread(self.mask_path)
 
         for label_to_merge in original_labels:
@@ -166,7 +208,7 @@ class LabeledImageMask:
             except KeyError:
                 pass
             self.delete_label_int(label_to_merge)
-        
+
         self.add_label_int(new_label)
 
         self.label_masks[new_label] = merged_color
@@ -177,11 +219,14 @@ class LabeledImageMask:
         """Saves label changes to corresponding self LabeledImageMask
 
         """
-        cwd = Path.cwd()
-        data_dir = cwd / 'data'
-        labels_dir = data_dir / 'labels'
-        labels_filepath = labels_dir / str(self.image_id + "_labels.csv")
+        if self.temp_dir is None:
+            cwd = Path.cwd()
+            data_dir = cwd / 'data'
+        else:
+            data_dir = self.temp_dir
 
+        labels_filepath = data_dir / f'labels_{self.image_id}.csv'
+        
         lines = ["label,R,G,B"]
         for label, color in self.label_masks.items():
             lines.append("{lab},{R},{G},{B}".format(
@@ -196,14 +241,19 @@ class LabeledImageMask:
         Args:
             changed_mask (cv2 image representation): modified mask to write out
         """
-        cwd = Path.cwd()
-        data_dir = cwd / 'data'
-        masks_dir = data_dir / 'masks'
-        mask_filepath = masks_dir / str(self.image_id + "_mask.png")
+        if self.temp_dir is None:
+            cwd = Path.cwd()
+            data_dir = cwd / 'data'
+        else:
+            data_dir = self.temp_dir
+            
+        mask_filepath = data_dir / f'mask_{self.image_id}.png'
 
         cv2.imwrite(str(mask_filepath.absolute()), changed_mask)
-            
-    def convert_to_tf_example(self):
+
+    
+    ## EXPORTER ##
+    def export_as_TFExample(self):
         """Converts LabeledImageMask object to tf_example
         
         Returns:
@@ -214,7 +264,7 @@ class LabeledImageMask:
         with tf.gfile.GFile(str(path_to_image.absolute()), 'rb') as fid:
             encoded_png = fid.read()
 
-        image_width  = self.xdim
+        image_width = self.xdim
         image_height = self.ydim
 
         filename = path_to_image.name.encode('utf8')
@@ -226,9 +276,10 @@ class LabeledImageMask:
 
         image_mask = cv2.imread(self.mask_path)
         for class_label, color in self.label_masks.items():
-            matches = np.where((image_mask == color).all(axis=2), 1, 0.0).astype(np.uint8)
+            matches = np.where(
+                (image_mask == color).all(axis=2), 1, 0.0).astype(np.uint8)
             classes_text.append(class_label.encode('utf8'))
-            classes.append(self.label_to_int_dict[class_label])
+            classes.append(self._label_to_int_dict[class_label])
             masks.append(matches)
 
         encoded_mask_png_list = []
@@ -239,16 +290,49 @@ class LabeledImageMask:
             img.save(output, format='PNG')
             encoded_mask_png_list.append(output.getvalue())
 
-        tf_example = tf.train.Example(features=tf.train.Features(feature={
-            'image/height': dataset_util.int64_feature(image_height),
-            'image/width': dataset_util.int64_feature(image_width),
-            'image/filename': dataset_util.bytes_feature(filename),
-            'image/source_id': dataset_util.bytes_feature(filename),
-            'image/encoded': dataset_util.bytes_feature(encoded_png),
-            'image/format': dataset_util.bytes_feature(image_format),
-            'image/object/class/text': dataset_util.bytes_list_feature(classes_text),
-            'image/object/class/label': dataset_util.int64_list_feature(classes),
-            'image/object/mask': dataset_util.bytes_list_feature(encoded_mask_png_list),
-        }))
+        tf_example = tf.train.Example(
+            features=tf.train.Features(
+                feature={
+                    'image/height':
+                    dataset_util.int64_feature(image_height),
+                    'image/width':
+                    dataset_util.int64_feature(image_width),
+                    'image/filename':
+                    dataset_util.bytes_feature(filename),
+                    'image/source_id':
+                    dataset_util.bytes_feature(filename),
+                    'image/encoded':
+                    dataset_util.bytes_feature(encoded_png),
+                    'image/format':
+                    dataset_util.bytes_feature(image_format),
+                    'image/object/class/text':
+                    dataset_util.bytes_list_feature(classes_text),
+                    'image/object/class/label':
+                    dataset_util.int64_list_feature(classes),
+                    'image/object/mask':
+                    dataset_util.bytes_list_feature(encoded_mask_png_list),
+                }))
 
         return tf_example
+
+    
+    ## HELPERS ##
+    @classmethod
+    def renumber_label_to_int_dict(cls):
+        for i, label in enumerate(LabeledImageMask._label_to_int_dict.keys()):
+            LabeledImageMask._label_to_int_dict[label] = i + 1
+
+    @classmethod
+    def delete_label_int(cls, label):
+        if label in LabeledImageMask._label_to_int_dict.keys():
+            del LabeledImageMask._label_to_int_dict[label]
+            # renumber all values
+            cls.renumber_label_to_int_dict()
+
+    @classmethod
+    def add_label_int(cls, label_to_add):
+        if label_to_add not in LabeledImageMask._label_to_int_dict.keys():
+            # add the new label
+            LabeledImageMask._label_to_int_dict[label_to_add] = None
+            # renumber all values
+            cls.renumber_label_to_int_dict()

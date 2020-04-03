@@ -3,10 +3,10 @@ import numpy as np
 import cv2
 import io
 import PIL
-from jigsaw.models.mask.model import LabeledImageMask
 
 from deeplab.datasets import build_data
 
+from jigsaw.model_utils.base.mask import LabeledImageMask
 
 class DeeplabLabeledImage(LabeledImageMask):
     training_type = "Deeplab Semantic Segmentation"
