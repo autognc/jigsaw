@@ -36,10 +36,6 @@ import contextlib2
 from object_detection.dataset_tools import tf_record_creation_util
 from sklearn.model_selection import KFold
 
-from jigsaw.mask import LabeledImageMask
-from jigsaw.bounding_box import BBoxLabeledImage
-
-
 def delete_dir(path):
     """Deletes all files and folders in specified directory
     
@@ -141,7 +137,7 @@ def write_out_fold(path, fold_data, is_standard=False):
         path (Path): directory to write folds out to
         fold_data (list): list of tuples, each tuple is (train, validation) sets
     """
-    record_path = path / 'tf'
+    record_path = path / 'train'
     if not os.path.exists(record_path):
         os.makedirs(record_path)
 
@@ -155,7 +151,9 @@ def write_out_fold(path, fold_data, is_standard=False):
 
     test_record_data, train_record_data = split_data(train_subset)
 
-    write_related_data(validation_subset, path / 'validation')
+    write_related_data(validation_subset, path / 'dev')
+    
+    # training
     write_out_tf_examples(train_record_data, record_path / 'train.record')
     write_out_tf_examples(test_record_data, record_path / 'test.record')
 
@@ -167,7 +165,7 @@ def write_out_complete_set(path, data):
         path (Path): directory to write complete set out to
         data (list): objects to write to the complete set
     """
-    record_path = path / 'tf'
+    record_path = path / 'train'
     if not os.path.exists(record_path):
         os.makedirs(record_path)
 
@@ -185,6 +183,9 @@ def write_out_tf_examples(objects, path):
         path (Path): directory to write this tf_example to, encompassing the name
     """
     num_shards = (len(objects) // 1000) + 1
+    
+    with open(str(path) + '.numexamples', 'w') as output:
+        output.write(str(len(objects)))
 
     with contextlib2.ExitStack() as tf_record_close_stack:
         output_tfrecords = tf_record_creation_util.open_sharded_output_tfrecords(
@@ -195,21 +196,6 @@ def write_out_tf_examples(objects, path):
             output_shard_index = index % num_shards
             output_tfrecords[output_shard_index].write(
                 tf_example.SerializeToString())
-
-
-# Only BBLI has a convert_to_dict method for now, hence type check.
-def write_obj_to_json(obj: BBoxLabeledImage, path):
-    """Writes object (specifically our custom BBoxLabeledImage) out as json
-    
-    Args:
-        obj (BBoxLabeledImage): object to write out as json
-        path (Path): directory to write this json object to
-    """
-    obj_converted_to_dict = obj.convert_to_dict()
-
-    with open(path, 'w') as outfile:
-        json.dump(obj_converted_to_dict, outfile)
-
 
 def write_related_data(objects, path):
     if not os.path.exists(path):
@@ -242,8 +228,8 @@ def write_dataset(obj_list,
     write_related_data(test_subset, dataset_path / 'test')
 
     # Fold subsets.
-    folds = divide_into_folds(dev_subset)
-    dev_path = dataset_path / 'dev'
+    folds = divide_into_folds(dev_subset, num_folds=num_folds)
+    dev_path = dataset_path / 'splits'
 
     for fold_num, fold in enumerate(folds):
 

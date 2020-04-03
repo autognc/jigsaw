@@ -12,10 +12,6 @@ import boto3
 import cv2
 import numpy as np
 
-from jigsaw.mask import LabeledImageMask
-from jigsaw.bounding_box import BBoxLabeledImage
-
-
 def download_image_and_save(image_url, destination):
     """Downloads an image stored remotely and saves it locally
     
@@ -45,7 +41,7 @@ def load_remote_image(image_url):
     return image
 
 
-def copy_data_locally(source_dir,
+def copy_data_locally(source_dir, dest_dir=None,
                       condition_func=lambda filename: True,
                       num_threads=20):
     """Copies data from a local source into Jigsaw given some condition
@@ -64,12 +60,12 @@ def copy_data_locally(source_dir,
     if isinstance(source_dir, str):
         source_dir = Path(source_dir)
 
-    cwd = Path.cwd()
-    data_dir = cwd / 'data'
-    try:
-        os.makedirs(data_dir)
-    except FileExistsError:
-        pass
+    if dest_dir is None:
+        cwd = Path.cwd()
+        data_dir = cwd / 'data'
+        os.makedirs(data_dir, exist_ok=True)
+    else:
+        data_dir = dest_dir
 
     def copy_object(queue):
         while True:
@@ -90,7 +86,7 @@ def copy_data_locally(source_dir,
         workers.append(worker)
 
     for file in source_dir.iterdir():
-        if condition_func(file.name) and not (data_dir / file.name).exists():
+        if os.path.isfile(file) and condition_func(file.name) and not (data_dir / file.name).exists():
             copy_queue.put(file.absolute())
 
     copy_queue.join()
@@ -128,10 +124,10 @@ def download_data_from_s3(bucket_name,
 
     cwd = Path.cwd()
     data_dir = cwd / 'data'
-    try:
-        os.makedirs(data_dir)
-    except FileExistsError:
-        pass
+    # try:
+    os.makedirs(data_dir, exist_ok=True)
+    # except FileExistsError:
+        # pass
     os.chdir(data_dir)
 
     # create a queue for objects that need to be copied
@@ -185,18 +181,18 @@ def download_json_metadata_from_s3(bucket_name, prefix="", num_threads=20):
             obj = queue.get()
             if obj is None:
                 break
-            obj.Object().download_file(obj.key.lstrip(prefix))
+            obj.Object().download_file(obj.key.replace(prefix, ''))
             queue.task_done()
 
     # create a directory to store downloaded metadata
     cwd = Path.cwd()
     data_dir = cwd / 'data'
     json_dir = data_dir / 'json'
-    try:
-        os.makedirs(json_dir)
-    except FileExistsError:
-        shutil.rmtree(json_dir)
-        os.makedirs(json_dir)
+    # try:
+    os.makedirs(json_dir, exist_ok=True)
+    # except FileExistsError:
+    #     shutil.rmtree(json_dir)
+    #     os.makedirs(json_dir)
     os.chdir(json_dir)
 
     # create a queue for objects that need to be downloaded
@@ -280,7 +276,7 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
     bucket = s3.Bucket(os.environ["LABELED_BUCKET_NAME"])
     for obj in bucket.objects.filter(Prefix=prefix):
         if obj.key.endswith("_mask.png"):
-            image_id = obj.key.lstrip(prefix).rstrip("_mask.png")
+            image_id = obj.key.replace(prefix,'').replace("_mask.png", '')
             if image_id in image_ids:
                 download_queue.put(obj)
 
@@ -316,7 +312,7 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
     bucket = s3.Bucket(os.environ["LABELED_BUCKET_NAME"])
     for obj in bucket.objects.filter(Prefix=prefix):
         if obj.key.endswith("_labels.csv"):
-            image_id = obj.key.lstrip(prefix).rstrip("_labels.csv")
+            image_id = obj.key.replace(prefix, '').replace("_labels.csv", '')
             if image_id in image_ids:
                 download_queue.put(obj)
 
@@ -354,7 +350,7 @@ def download_image_data_from_s3(image_ids, prefix="", num_threads=20):
         file_extensions = [".png", ".jpg", ".jpeg"]
         for extension in file_extensions:
             if obj.key.endswith(extension):
-                image_id = obj.key.lstrip(prefix).rstrip(extension)
+                image_id = obj.key.replace(prefix, '').replace(extension, '')
                 if image_id in image_ids:
                     download_queue.put(obj)
 
@@ -387,116 +383,6 @@ def get_s3_filepath(image_id, prefix="", filetype="png"):
     url = "https://s3.amazonaws.com/{bucket}/{key}".format(
         bucket=bucket_name, key=key_name)
     return url
-
-
-def load_BBoxLabeledImages(image_ids, num_threads=20):
-    """Loads a set of BBoxLabeledImage objects from the filesystem
-
-    NOTE: this is done concurrently to limit I/O costs. Since no image data
-    is stored in these objects (only dimensions and bounding-box details), it
-    should not be too memory-intensive to store the entire dataset's
-    bounding-box data in RAM.
-    
-    Args:
-        image_ids (list): the list of image IDs that should be loaded
-        num_threads (int, optional): Defaults to 20. The number of threads that
-            should be used for concurrent loading.
-    
-    Returns:
-        dict: a dict where the keys are image IDs and the values are the
-            BBoxLabeledImage object for that image
-    """
-    bbox_labeled_images = {}
-
-    # loads a BBoxLabeledImage object from the given image_id
-    def load(image_id):
-        labeled_image_mask = labeled_image_mask = LabeledImageMask.from_files(
-            image_id)
-        return BBoxLabeledImage.from_labeled_image_mask(labeled_image_mask)
-
-    # pulls image_ids from a queue, loads the relevant object
-    # NOTE: this is the function being performed concurrently
-    def worker_load_func(queue):
-        while True:
-            image_id = queue.get()
-            if image_id is None:
-                break
-            bbox_labeled_image = load(image_id)
-            bbox_labeled_images[image_id] = bbox_labeled_image
-            queue.task_done()
-
-    # create a queue for images that need to be loaded
-    image_id_queue = Queue(maxsize=0)
-    workers = []
-    for worker in range(num_threads):
-        worker = Thread(target=worker_load_func, args=(image_id_queue, ))
-        worker.setDaemon(True)
-        worker.start()
-        workers.append(worker)
-    for image_id in image_ids:
-        image_id_queue.put(image_id)
-
-    # gracefully finish all threaded processes
-    image_id_queue.join()
-    for _ in range(num_threads):
-        image_id_queue.put(None)
-    for worker in workers:
-        worker.join()
-
-    return bbox_labeled_images
-
-
-def load_LabeledImageMasks(image_ids, num_threads=20):
-    """Loads a set of LabeledImageMask objects from the filesystem
-
-    NOTE: this is done concurrently to limit I/O costs.
-    
-    Args:
-        image_ids (list): the list of image IDs that should be loaded
-        num_threads (int, optional): Defaults to 20. The number of threads that
-            should be used for concurrent loading.
-    
-    Returns:
-        dict: a dict where the keys are image IDs and the values are the
-            LabeledImageMask object for that image
-    """
-    labeled_image_masks = []
-
-    # loads a LabeledImageMask object from the given image_id
-    def load(image_id):
-        labeled_image_mask = LabeledImageMask.from_files(image_id)
-        return labeled_image_mask
-
-    # pulls image_ids from a queue, loads the relevant object
-    # NOTE: this is the function being performed concurrently
-    def worker_load_func(queue):
-        while True:
-            image_id = queue.get()
-            if image_id is None:
-                break
-            labeled_image_mask = load(image_id)
-            labeled_image_masks.append(labeled_image_mask)
-            queue.task_done()
-
-    # create a queue for images that need to be loaded
-    image_id_queue = Queue(maxsize=0)
-    workers = []
-    for worker in range(num_threads):
-        worker = Thread(target=worker_load_func, args=(image_id_queue, ))
-        worker.setDaemon(True)
-        worker.start()
-        workers.append(worker)
-    for image_id in image_ids:
-        image_id_queue.put(image_id)
-
-    # gracefully finish all threaded processes
-    image_id_queue.join()
-    for _ in range(num_threads):
-        image_id_queue.put(None)
-    for worker in workers:
-        worker.join()
-
-    return labeled_image_masks
 
 
 def upload_dataset(bucket_name, directory, num_threads=20):
