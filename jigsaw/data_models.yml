@@ -1,7 +1,5 @@
 - parent_module: jigsaw.models.bbox.model
   model_class: BBoxLabeledImage
-- parent_module: jigsaw.models.deeplab.model
-  model_class: DeeplabLabeledImage
 - parent_module: jigsaw.models.instance_mask.model
   model_class: InstanceImageMask
 - parent_module: jigsaw.models.feature_points.model
