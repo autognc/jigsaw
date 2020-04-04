@@ -208,7 +208,6 @@ def write_related_data(objects, path):
 def write_dataset(obj_list,
                   test_percent=0.2,
                   num_folds=5,
-                  out_dir: Path = Path.cwd(),
                   custom_dataset_name='dataset'):
     """Main driver for this file
     
@@ -219,7 +218,9 @@ def write_dataset(obj_list,
         out_dir (Path): directory to write this dataset to
         custom_dataset_name (str): name of the dataset's containing folder
     """
+    out_dir = Path.cwd()
     dataset_path = out_dir / 'dataset' / custom_dataset_name
+    print(dataset_path)
     delete_dir(dataset_path)
 
     test_subset, dev_subset = split_data(obj_list, test_percent)
@@ -252,8 +253,7 @@ def write_metadata(
         training_type,
         image_ids,
         filters,
-        transforms,
-        out_dir: Path = Path.cwd(),
+        transforms
 ):
     """Writes out a metadata file in JSON format
 
@@ -268,6 +268,7 @@ def write_metadata(
         transforms (dict): a dictionary representing transform metadata
         out_dir (Path, optional): Defaults to Path.cwd().
     """
+    out_dir = Path.cwd()
     dataset_path = out_dir / 'dataset' / name
     metadata_filepath = dataset_path / 'metadata.json'
 
