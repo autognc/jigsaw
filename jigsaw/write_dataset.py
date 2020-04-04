@@ -228,22 +228,14 @@ def write_dataset(obj_list,
     # Test subset.
     write_related_data(test_subset, dataset_path / 'test')
 
-    # Fold subsets.
-    folds = divide_into_folds(dev_subset, num_folds=num_folds)
     dev_path = dataset_path / 'splits'
 
-    for fold_num, fold in enumerate(folds):
+    # standard_path = dev_path / 'standard'
+    # write_out_fold(standard_path, fold, is_standard=True)
 
-        # The special standard and complete set.
-        if fold_num == 0:
-            standard_path = dev_path / 'standard'
-            write_out_fold(standard_path, fold, is_standard=True)
+    complete_path = dev_path / 'complete'
+    write_out_complete_set(complete_path, dev_subset)
 
-            complete_path = dev_path / 'complete'
-            write_out_complete_set(complete_path, fold[0] + fold[1])
-
-        fold_path = dev_path / str('fold_' + str(fold_num))
-        write_out_fold(fold_path, fold)
 
 
 def write_metadata(
