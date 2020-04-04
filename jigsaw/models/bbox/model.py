@@ -102,7 +102,7 @@ class BBoxLabeledImage(LabeledImage):
     @classmethod
     def filter_and_load(cls, data_source, **kwargs):
         image_ids, filter_metadata, temp_dir = default_filter_and_load(data_source=data_source, **kwargs)
-        return image_ids, filter_metadata
+        return image_ids, filter_metadata, temp_dir
 
     @classmethod
     def transform(cls, image_ids, **kwargs):
