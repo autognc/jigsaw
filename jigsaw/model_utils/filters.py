@@ -254,10 +254,12 @@ def default_filter_and_load(data_source, **kwargs):
     else:
         image_ids = tags_df.index.tolist()
 
+    # condition function for S3 download and local copying
     def need_file(filename):
-        image_id = filename[filename.index('_')+1:filename.index('.')]
-        if image_id in image_ids:
-            return True
+        if len(filename) > 0:
+            image_id = filename[filename.index('_')+1:filename.index('.')]
+            if image_id in image_ids:
+                return True
 
     if data_source == "Local":
         spinner = Spinner(
