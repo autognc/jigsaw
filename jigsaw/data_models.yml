@@ -4,5 +4,5 @@
 #   model_class: DeeplabLabeledImage
 - parent_module: jigsaw.models.instance_mask.model
   model_class: InstanceImageMask
-- parent_module: jigsaw.models.feature_points.model
-  model_class: FeaturePointsRegression
+- parent_module: jigsaw.models.pose_regression.model
+  model_class: PoseRegression

@@ -12,8 +12,8 @@ from jigsaw.model_utils.transforms import default_perform_transforms
 from jigsaw.constants import METADATA_PREFIX
 
 
-class FeaturePointsRegression(LabeledImage):
-    training_type = "Feature Points Regression"
+class PoseRegression(LabeledImage):
+    training_type = "Pose Regression"
 
     associated_files = {
         "image_type_1": ".png",
@@ -73,19 +73,18 @@ class FeaturePointsRegression(LabeledImage):
         ydim, xdim, channels = image.shape
 
         if not cls._aggregate:
-            mean = np.zeros([ydim, xdim, channels], dtype=np.float32)
-            m2 = np.zeros([ydim, xdim, channels], dtype=np.float32)
+            mean = np.zeros([channels], dtype=np.float32)
+            m2 = np.zeros([channels], dtype=np.float32)
             cls._aggregate = (0, mean, m2)
-        elif list(cls._aggregate[1].shape) != [ydim, xdim, channels]:
-            raise ValueError(f"Found image with incompatible shape {[ydim, xdim, channels]}")
 
         # aggregate the mean and squared distance from mean using
         # Welford's algorithm (https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm)
         count, mean, m2 = cls._aggregate
         count += 1
-        delta = image - mean
+        reduced_image = np.mean(image, axis=(0, 1))
+        delta = reduced_image - mean
         mean += delta / count
-        delta2 = image - mean
+        delta2 = reduced_image - mean
         m2 += delta * delta2
         cls._aggregate = (count, mean, m2)
         return cls(image_id, image_filepath, image_type, meta_filepath, xdim, ydim)
