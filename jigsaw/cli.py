@@ -51,8 +51,10 @@ if data_origin == "Local":
         message="Enter the filepath at which the data is located:",
         default=str(Path.home().absolute()),
         validator=DirectoryPathValidator)
-    image_ids, filter_metadata = model.filter_and_load(
+    image_ids, filter_metadata, temp_dir = model.filter_and_load(
         data_source=data_origin, data_filepath=data_path)
+
+    model.temp_dir = temp_dir
 
 elif data_origin == "S3":
     default = ""
