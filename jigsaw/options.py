@@ -54,6 +54,11 @@ local_opt = click.option(
     help='Do not download from S3 and instead download data from the provided filepath. Ignored without --no-user.'
 )
 
+folders_opt = click.option(
+    '-f', '--folders', type=str, multiple=True, is_eager=True,
+    help='Prefixes/Folders to be downloaded for dataset. Ignored with --no-user.'  
+)
+
 name_opt = click.option(
     '--name', '-n', type=str, is_eager=True,
     help='Name of dataset being created. Ignored without --no-user.'

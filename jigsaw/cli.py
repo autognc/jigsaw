@@ -21,8 +21,8 @@ from jigsaw.data_interface import load_models
 from jigsaw.io_utils import upload_dataset, get_bucket_folders
 from jigsaw.write_dataset import write_dataset, write_metadata 
 from jigsaw.options import (no_user_opt, training_type_opt, local_opt, bucket_opt,
-                            name_opt, kfolds_opt, notes_opt, username_opt, verbose_opt,
-                            upload_opt, delete_local_opt)
+                            folders_opt, name_opt, kfolds_opt, notes_opt, username_opt, 
+                            verbose_opt, upload_opt, delete_local_opt)
 
 init()
 
@@ -39,6 +39,7 @@ def cli():
 @training_type_opt
 @local_opt
 @bucket_opt
+@folders_opt
 @name_opt
 @kfolds_opt
 @notes_opt
@@ -46,9 +47,9 @@ def cli():
 @verbose_opt
 @upload_opt
 @delete_local_opt
-def create_dataset(ctx: click.Context, type: str, local: str, bucket: str, name: str, 
-                   kfolds: int, notes: str, username: str, verbose: bool, upload: str,
-                   delete_local: bool):
+def create_dataset(ctx: click.Context, type: str, local: str, bucket: str, folders: str, 
+                   name: str, kfolds: int, notes: str, username: str, verbose: bool, 
+                   upload: str, delete_local: bool):
     set_proper_cwd()
 
     cwd = Path.cwd()
@@ -59,20 +60,15 @@ def create_dataset(ctx: click.Context, type: str, local: str, bucket: str, name:
     training_types = [model.training_type for model in data_models]
 
     # ask the user which type of training should be performed
-    training_type = None
-    if(type):
-        training_type = type
-    else:
-        training_type = user_selection(
-            message="Which type of training would you like to prepare for?",
-            choices=training_types,
-            selection_type="list")
+    training_type = type if (type) else user_selection(message="Which type of training would you like to prepare for?",
+                                                       choices=training_types,
+                                                       selection_type="list")
     try:
         model = data_models[training_types.index(training_type)]
     except ValueError as e:
         raise click.exceptions.BadParameter(type, ctx=ctx, param=type, param_hint='training type')
     
-    
+
     # Gets Data Origin
     data_origin = None
     provided = False
@@ -116,14 +112,13 @@ def create_dataset(ctx: click.Context, type: str, local: str, bucket: str, name:
 
         # prompt user for desired prefixes
         try:
-            user_folder_selection = user_selection(
-                message="Which folders would you like to download from?",
-                choices=get_bucket_folders(bucket, filter_val),
-                selection_type="checkbox",
-                sort_choices=True)
+            user_folder_selection = folders if folders else user_selection(message="Which folders would you like to download from?",
+                                                                           choices=get_bucket_folders(bucket, filter_val),
+                                                                           selection_type="checkbox",
+                                                                           sort_choices=True)
         except: 
             # Needs a fix (client.exceptions.NoSuchBucket) is the specific error but client is inside the 
-            # get_bucket_folders function
+            # get_bucket_folders function, also needs possible error checking for folder name
             raise click.exceptions.BadParameter(bucket, ctx=ctx, param=type, param_hint='s3 bucket name')
 
         
@@ -139,37 +134,18 @@ def create_dataset(ctx: click.Context, type: str, local: str, bucket: str, name:
     except NotImplementedError:
         pass
 
-    if(name):
-        dataset_name = name
-    else:
-        dataset_name = user_input(
-            message="What would you like to name this dataset?",
-            validator=FilenameValidator)
+    dataset_name = name if name else user_input(message="What would you like to name this dataset?",
+                                                validator=FilenameValidator)
 
-    if(kfolds != -1):
-        k_folds_specified = kfolds
-    else:
-        k_folds_specified = user_input(
-            message="How many folds would you like the dataset to have?",
-            validator=IntegerValidator,
-            default="5")
+    k_folds_specified = kfolds if kfolds != -1 else user_input(message="How many folds would you like the dataset to have?",
+                                                               validator=IntegerValidator,
+                                                               default="5")
 
-    if(notes):
-        comments = notes
-    else:
-        comments = user_input("Add any notes or comments about this dataset here:")
+    comments = notes if notes else user_input("Add any notes or comments about this dataset here:")
     
-    if(username):
-        user = username
-    else:
-        user = user_input("Please enter your first and last name:")
+    user = username if username else user_input("Please enter your first and last name:")
 
-    if(verbose):
-        model.verbose_write=True 
-    else:
-        # Potentially get rid of this?               
-        if user_confirms(message="Write dataset in verbose mode?", default=False):
-            model.verbose_write = True
+    model.verbose_write = verbose if verbose else user_confirms(message="Write dataset in verbose mode?", default=False)
 
     spinner = Spinner(text="Writing out dataset locally...", text_color="magenta")
     spinner.start()
@@ -206,11 +182,7 @@ def create_dataset(ctx: click.Context, type: str, local: str, bucket: str, name:
     if (upload or user_confirms(message="Would you like to upload the dataset to S3?")):
         default = ""
         default = os.getenv('DATASETS_BUCKET_NAME', default)
-        if(upload):
-            bucket = upload
-        else:
-            bucket = user_input(
-                message="Which bucket would you like to upload to?", default=default)
+        bucket = upload if upload else user_input(message="Which bucket would you like to upload to?", default=default)
         spinner = Spinner(text="Uploading dataset to S3...", text_color="magenta")
         spinner.start()
         upload_dataset(
