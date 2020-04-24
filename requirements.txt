@@ -8,4 +8,4 @@ pyyaml==5.1
 pandas
 opencv-python>=4
 requests
-object-detection @ git+https://github.com/autognc/object-detection
+object-detection @ https://github.com/autognc/object-detection/tarball/object-detection

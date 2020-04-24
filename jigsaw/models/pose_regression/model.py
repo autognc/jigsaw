@@ -9,6 +9,7 @@ from object_detection.utils import dataset_util
 from jigsaw.data_interface import LabeledImage
 from jigsaw.model_utils.filters import default_filter_and_load
 from jigsaw.model_utils.transforms import default_perform_transforms
+from jigsaw.model_utils.types import BoundingBox
 from jigsaw.constants import METADATA_PREFIX
 
 
@@ -29,15 +30,17 @@ class PoseRegression(LabeledImage):
 
     temp_dir = None
     _feature_point_labels = None
+    _label_to_int_dict = {}
     _aggregate = None
 
-    def __init__(self, image_id, image_path, image_type, meta_path, xdim, ydim):
+    def __init__(self, image_id, image_path, image_type, label_boxes, pose, xdim, ydim):
         super().__init__(image_id)
         self.image_path = image_path
         self.image_type = image_type
+        self.pose = pose
+        self.label_boxes = label_boxes
         self.xdim = xdim
         self.ydim = ydim
-        self.meta_path = meta_path
 
     @classmethod
     def construct(cls, image_id, **kwargs):
@@ -63,11 +66,19 @@ class PoseRegression(LabeledImage):
         if not os.path.exists(meta_filepath):
             raise ValueError("Hmm, there doesn't seem to be a valid metadata filepath.")
 
+        with open(data_dir / f"meta_{image_id}.json", "r") as f:
+            meta = json.load(f)
+
         # if this is the first image, load the feature point labels
-        if not cls._feature_point_labels:
-            with open(meta_filepath, 'r') as f:
-                feature_points = json.load(f)['truth_centroids']
-            cls._feature_point_labels = sorted(feature_points.keys())
+        # if not cls._feature_point_labels:
+            # feature_points = meta['truth_centroids']
+            # cls._feature_point_labels = sorted(feature_points.keys())
+
+        label_boxes = []
+        for label, bbox in meta['bboxes'].items():
+            label_boxes.append((label, bbox))
+            if label not in cls._label_to_int_dict.keys():
+                cls._label_to_int_dict[label] = max(cls._label_to_int_dict.values()) + 1 if cls._label_to_int_dict else 0
 
         image = cv2.imread(str(image_filepath.absolute()))
         ydim, xdim, channels = image.shape
@@ -87,7 +98,7 @@ class PoseRegression(LabeledImage):
         delta2 = reduced_image - mean
         m2 += delta * delta2
         cls._aggregate = (count, mean, m2)
-        return cls(image_id, image_filepath, image_type, meta_filepath, xdim, ydim)
+        return cls(image_id, image_filepath, image_type, label_boxes, meta['pose'], xdim, ydim)
 
     @classmethod
     def filter_and_load(cls, data_source, **kwargs):
@@ -101,9 +112,9 @@ class PoseRegression(LabeledImage):
 
     @classmethod
     def write_additional_files(cls, dataset_name, **kwargs):
-        output_path = Path.cwd() / 'dataset' / dataset_name / 'feature_points.json'
-        with open(output_path, 'w') as f:
-            json.dump(cls._feature_point_labels, f)
+        # output_path = Path.cwd() / 'dataset' / dataset_name / 'feature_points.json'
+        # with open(output_path, 'w') as f:
+            # json.dump(cls._feature_point_labels, f)
 
         mean_path = Path.cwd() / 'dataset' / dataset_name / 'mean.npy'
         stdev_path = Path.cwd() / 'dataset' / dataset_name / 'stdev.npy'
@@ -115,33 +126,37 @@ class PoseRegression(LabeledImage):
         with tf.gfile.GFile(str(self.image_path), 'rb') as fid:
             encoded_png = fid.read()
 
-        with open(self.meta_path, 'r') as f:
-            metadata = json.load(f)
-            feature_points = metadata['truth_centroids']
-            pose = metadata['pose']
-        if sorted(feature_points.keys()) != self._feature_point_labels:
-            raise ValueError(
-                f"File {self.image_path} contains inconsistent feature points: expected {self._feature_point_labels}, got {sorted(feature_points.keys())}"
-            )
+        # feature_points = metadata['truth_centroids']
+
+
+        # if sorted(feature_points.keys()) != self._feature_point_labels:
+            # raise ValueError(
+                # f"File {self.image_path} contains inconsistent feature points: expected {self._feature_point_labels}, got {sorted(feature_points.keys())}"
+            # )
         # sort by key to make sure always the same order
-        feature_points = [feature_points[k] for k in self._feature_point_labels]
-        feature_points = [x[0] for x in feature_points] + [x[1] for x in feature_points]
+        # feature_points = [feature_points[k] for k in self._feature_point_labels]
+        # feature_points = [x[0] for x in feature_points] + [x[1] for x in feature_points]
 
         return tf.train.Example(
             features=tf.train.Features(
                 feature={
-                    'height':
+                    'image/height':
                         dataset_util.int64_feature(self.ydim),
-                    'width':
+                    'image/width':
                         dataset_util.int64_feature(self.xdim),
-                    'image_id':
+                    'image/source_id':
                         dataset_util.bytes_feature(self.image_id.encode('utf-8')),
-                    'image_data':
+                    'image/encoded':
                         dataset_util.bytes_feature(encoded_png),
-                    'image_format':
+                    'image/format':
                         dataset_util.bytes_feature(self.image_type.encode('utf-8')),
-                    'feature_points':
-                        dataset_util.int64_list_feature(feature_points),
-                    'pose':
-                        dataset_util.float_list_feature(pose)
+                    # 'feature_points':
+                        # dataset_util.int64_list_feature(feature_points),
+                    'image/object/bbox/xmin': dataset_util.float_list_feature([b['xmin'] / self.xdim for l, b in self.label_boxes]),
+                    'image/object/bbox/xmax': dataset_util.float_list_feature([b['xmax'] / self.xdim for l, b in self.label_boxes]),
+                    'image/object/bbox/ymin': dataset_util.float_list_feature([b['ymin'] / self.ydim for l, b in self.label_boxes]),
+                    'image/object/bbox/ymax': dataset_util.float_list_feature([b['ymax'] / self.ydim for l, b in self.label_boxes]),
+                    'image/object/class/text': dataset_util.bytes_list_feature([l.encode('utf-8') for l, b in self.label_boxes]),
+                    'image/object/class/label': dataset_util.int64_list_feature([self._label_to_int_dict[l] for l, b in self.label_boxes]),
+                    'image/object/pose': dataset_util.float_list_feature(self.pose)
                 }))
